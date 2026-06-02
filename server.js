@@ -16,6 +16,17 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
+// Инициализируем файлы данных если их нет
+if (!fs.existsSync(USERS_FILE)) {
+  fs.writeFileSync(USERS_FILE, '[]', 'utf8');
+}
+if (!fs.existsSync(POSTS_FILE)) {
+  fs.writeFileSync(POSTS_FILE, '[]', 'utf8');
+}
+if (!fs.existsSync(MESSAGES_FILE)) {
+  fs.writeFileSync(MESSAGES_FILE, '[]', 'utf8');
+}
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
