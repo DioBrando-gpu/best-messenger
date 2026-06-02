@@ -16,8 +16,11 @@ const btnPostCreate = document.querySelector('#btn-post-create');
 const messageText = document.querySelector('#message-text');
 const btnSendMessage = document.querySelector('#btn-send-message');
 const backToContacts = document.querySelector('#back-to-contacts');
+const searchUsersInput = document.querySelector('#search-users');
+const searchResults = document.querySelector('#search-results');
 
 let currentChat = null;
+let searchTimeout = null;
 
 function showSection(section) {
   pageSections.forEach(sec => sec.classList.toggle('hidden', sec.dataset.section !== section));
@@ -64,7 +67,7 @@ async function loadUser() {
   }
 }
 
-function createPost(post) {
+function renderPost(post) {
   const card = document.createElement('article');
   card.className = 'post-card';
   card.innerHTML = `
@@ -96,7 +99,7 @@ async function loadFeed() {
   try {
     const data = await request('/api/feed');
     feedContainer.innerHTML = '';
-    data.posts.forEach(post => feedContainer.appendChild(createPost(post)));
+    data.posts.forEach(post => feedContainer.appendChild(renderPost(post)));
   } catch (error) {
     setStatus(error.message);
   }
@@ -122,7 +125,7 @@ async function deletePost(postId, element) {
   }
 }
 
-async function createPost() {
+async function submitPost() {
   try {
     if (!postText.value.trim()) {
       setStatus('Напишите текст поста');
@@ -171,6 +174,56 @@ async function loadContacts() {
       item.addEventListener('click', () => openChat(contact.name));
       contactsList.appendChild(item);
     });
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function searchUsers(query) {
+  if (!query.trim()) {
+    searchResults.classList.add('hidden');
+    searchResults.innerHTML = '';
+    return;
+  }
+
+  try {
+    const data = await request(`/api/users/search?q=${encodeURIComponent(query)}`);
+    searchResults.innerHTML = '';
+    
+    if (!data.users || data.users.length === 0) {
+      searchResults.innerHTML = '<p style="padding: 10px; color: #a5b4fc;">Пользователей не найдено</p>';
+      searchResults.classList.remove('hidden');
+      return;
+    }
+
+    data.users.forEach(user => {
+      const item = document.createElement('div');
+      item.className = 'search-result-item';
+      item.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="font-size: 1.5rem;">${user.avatar}</div>
+          <div>
+            <strong>@${user.username}</strong>
+            <small style="display: block; color: #a5b4fc;">${user.bio}</small>
+          </div>
+        </div>
+      `;
+      item.addEventListener('click', () => startChat(user.username));
+      searchResults.appendChild(item);
+    });
+    
+    searchResults.classList.remove('hidden');
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function startChat(username) {
+  try {
+    currentChat = username;
+    searchResults.classList.add('hidden');
+    searchUsersInput.value = '';
+    await openChat(username);
   } catch (error) {
     setStatus(error.message);
   }
@@ -250,7 +303,44 @@ async function logout() {
   }
 }
 
-btnPostCreate?.addEventListener('click', createPost);
+// Заглушка для голосовых сообщений - готово для будущей реализации
+async function sendVoiceMessage(audioBlob) {
+  // TODO: Реализовать отправку голосовых сообщений
+  // const audioData = await blobToBase64(audioBlob);
+  // await request('/api/voice/send', {
+  //   method: 'POST',
+  //   body: JSON.stringify({
+  //     to: currentChat,
+  //     audioData: audioData
+  //   })
+  // });
+  setStatus('Голосовые сообщения в разработке 🎤');
+}
+
+// Заглушка для stories - готово для будущей реализации  
+async function createStory(mediaData) {
+  // TODO: Реализовать создание stories
+  // await request('/api/stories/create', {
+  //   method: 'POST',
+  //   body: JSON.stringify({
+  //     media: mediaData,
+  //     duration: 10
+  //   })
+  // });
+  setStatus('Stories в разработке 🎬');
+}
+
+async function loadStories() {
+  // TODO: Загрузить stories после реализации
+  // try {
+  //   const data = await request('/api/stories/feed');
+  //   console.log('Stories:', data.stories);
+  // } catch (error) {
+  //   setStatus(error.message);
+  // }
+}
+
+btnPostCreate?.addEventListener('click', submitPost);
 btnSendMessage?.addEventListener('click', sendMessage);
 messageText?.addEventListener('keypress', (e) => e.key === 'Enter' && sendMessage());
 btnLogout?.addEventListener('click', logout);
@@ -261,6 +351,10 @@ backToContacts?.addEventListener('click', () => {
   currentChat = null;
   chatArea.classList.add('hidden');
   contactsList.classList.remove('hidden');
+});
+searchUsersInput?.addEventListener('input', (e) => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => searchUsers(e.target.value), 300);
 });
 
 showSection('feed');

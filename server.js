@@ -9,6 +9,8 @@ const PORT = 3000;
 const USERS_FILE = path.join(__dirname, 'data', 'users.json');
 const POSTS_FILE = path.join(__dirname, 'data', 'posts.json');
 const MESSAGES_FILE = path.join(__dirname, 'data', 'messages.json');
+const VOICE_MESSAGES_FILE = path.join(__dirname, 'data', 'voice_messages.json');
+const STORIES_FILE = path.join(__dirname, 'data', 'stories.json');
 
 // Создаём папку data если её нет
 const dataDir = path.join(__dirname, 'data');
@@ -25,6 +27,12 @@ if (!fs.existsSync(POSTS_FILE)) {
 }
 if (!fs.existsSync(MESSAGES_FILE)) {
   fs.writeFileSync(MESSAGES_FILE, '[]', 'utf8');
+}
+if (!fs.existsSync(VOICE_MESSAGES_FILE)) {
+  fs.writeFileSync(VOICE_MESSAGES_FILE, '[]', 'utf8');
+}
+if (!fs.existsSync(STORIES_FILE)) {
+  fs.writeFileSync(STORIES_FILE, '[]', 'utf8');
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -72,6 +80,22 @@ function readMessages() {
 
 function writeMessages(messages) {
   writeJSON(MESSAGES_FILE, messages);
+}
+
+function readVoiceMessages() {
+  return readJSON(VOICE_MESSAGES_FILE);
+}
+
+function writeVoiceMessages(messages) {
+  writeJSON(VOICE_MESSAGES_FILE, messages);
+}
+
+function readStories() {
+  return readJSON(STORIES_FILE);
+}
+
+function writeStories(stories) {
+  writeJSON(STORIES_FILE, stories);
 }
 
 function requireAuth(req, res, next) {
@@ -322,6 +346,72 @@ app.get('/api/user/:username', (req, res) => {
     following: user.following?.length || 0,
     posts: posts.length
   });
+});
+
+app.post('/api/voice/send', requireAuth, (req, res) => {
+  const { to, audioData } = req.body;
+  if (!to || !audioData) {
+    return res.status(400).json({ message: 'Укажите получателя и аудио' });
+  }
+
+  const users = readUsers();
+  if (!users.find(u => u.username === to)) {
+    return res.status(404).json({ message: 'Пользователь не найден' });
+  }
+
+  const voiceMessages = readVoiceMessages();
+  const newVoiceMsg = {
+    id: Date.now(),
+    from: req.session.username,
+    to: to,
+    audioData: audioData,
+    timestamp: new Date().toISOString(),
+    read: false
+  };
+
+  voiceMessages.push(newVoiceMsg);
+  writeVoiceMessages(voiceMessages);
+  res.json({ message: 'Голосовое сообщение отправлено', msg: newVoiceMsg });
+});
+
+app.post('/api/stories/create', requireAuth, (req, res) => {
+  const { media, duration } = req.body;
+  if (!media) {
+    return res.status(400).json({ message: 'Укажите контент истории' });
+  }
+
+  const stories = readStories();
+  const newStory = {
+    id: Date.now(),
+    author: req.session.username,
+    media: media,
+    duration: duration || 10,
+    timestamp: new Date().toISOString(),
+    views: []
+  };
+
+  stories.push(newStory);
+  writeStories(stories);
+  res.json({ message: 'История создана', story: newStory });
+});
+
+app.get('/api/stories/feed', requireAuth, (req, res) => {
+  const stories = readStories();
+  const users = readUsers();
+  const currentUser = users.find(u => u.username === req.session.username);
+  
+  const enrichedStories = stories
+    .filter(s => currentUser?.following?.includes(s.author) || s.author === req.session.username)
+    .map(s => {
+      const user = users.find(u => u.username === s.author);
+      return {
+        ...s,
+        avatar: user?.avatar || '👤'
+      };
+    })
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  
+  res.json({ stories: enrichedStories });
 });
 
 app.get('*', (req, res) => {
