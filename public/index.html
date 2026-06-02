@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TotemMask Mini</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-app="true">
+  <div class="container">
+    <header class="header card">
+      <div class="logo"><span></span>TotemMask</div>
+      <nav class="navbar">
+        <button id="nav-feed" class="active">Лента</button>
+        <button id="nav-messages">Сообщения</button>
+        <button id="nav-profile">Профиль</button>
+      </nav>
+      <button id="btn-logout" class="btn-primary">Выйти</button>
+    </header>
+
+    <section class="hero card section">
+      <div class="section-title">
+        <h1 id="page-title">Лента</h1>
+        <button class="btn-primary" id="refresh-feed">Обновить</button>
+      </div>
+      <p id="api-status">Загрузка...</p>
+    </section>
+
+    <div class="grid grid-3">
+      <main class="card section page-section" data-section="feed">
+        <div id="feed" class="grid"></div>
+      </main>
+
+      <aside class="card section page-section hidden" data-section="messages">
+        <div class="section-title"><h2>Сообщения</h2></div>
+        <div id="messages" class="message-card"></div>
+      </aside>
+
+      <aside class="card section page-section hidden" data-section="profile">
+        <div id="profile"></div>
+      </aside>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

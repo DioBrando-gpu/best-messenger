@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Вход / Регистрация</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <main class="card form-card">
+      <h1>TotemMask</h1>
+      <p>Локальный мини-мессенджер с регистрацией и простой лентой.</p>
+
+      <div class="form-item">
+        <label for="username">Логин</label>
+        <input id="username" type="text" placeholder="Введите логин" autocomplete="username">
+      </div>
+      <div class="form-item">
+        <label for="password">Пароль</label>
+        <input id="password" type="password" placeholder="Введите пароль" autocomplete="current-password">
+      </div>
+
+      <div id="message" class="alert hidden"></div>
+
+      <div class="form-actions">
+        <button id="btn-login" class="btn-primary">Войти</button>
+        <button id="btn-register" class="btn-primary">Регистрация</button>
+      </div>
+    </main>
+  </div>
+  <script>
+    const usernameInput = document.querySelector('#username');
+    const passwordInput = document.querySelector('#password');
+    const btnLogin = document.querySelector('#btn-login');
+    const btnRegister = document.querySelector('#btn-register');
+    const messageEl = document.querySelector('#message');
+
+    function showMessage(text, isError = true) {
+      messageEl.textContent = text;
+      messageEl.classList.toggle('hidden', !text);
+      messageEl.style.backgroundColor = isError ? 'rgba(220, 38, 38, .12)' : 'rgba(34,197,94, .14)';
+      messageEl.style.color = isError ? '#fee2e2' : '#dcfce7';
+    }
+
+    async function request(path, body) {
+      const response = await fetch(path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json.message || 'Ошибка');
+      return json;
+    }
+
+    async function submit(path) {
+      try {
+        const body = {
+          username: usernameInput.value.trim(),
+          password: passwordInput.value.trim()
+        };
+        const result = await request(path, body);
+        showMessage(result.message, false);
+        setTimeout(() => window.location.href = '/', 600);
+      } catch (error) {
+        showMessage(error.message || 'Ошибка сети');
+      }
+    }
+
+    btnLogin.addEventListener('click', () => submit('/api/login'));
+    btnRegister.addEventListener('click', () => submit('/api/register'));
+  </script>
+</body>
+</html>

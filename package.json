@@ -1,0 +1,14 @@
+{
+  "name": "totem-mask-mini-messenger",
+  "version": "1.0.0",
+  "description": "Минималистичный локальный сайт с регистрацией, входом и простой лентой.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.4",
+    "express": "^4.18.3",
+    "express-session": "^1.17.3"
+  }
+}
