@@ -107,6 +107,7 @@ function showSection(section) {
   if (section === 'settings') {
     renderSettingsUI();
   }
+  document.body.classList.toggle('on-stand', section === 'stand');
 }
 
 function setStatus(text) {

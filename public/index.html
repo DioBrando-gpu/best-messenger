@@ -65,16 +65,23 @@
       </aside>
 
       <section class="card section page-section hidden stand-section" data-section="stand">
-        <div class="stand-upload card">
+        <div id="stand-feed" class="stand-feed"></div>
+        <button type="button" id="stand-fab" class="stand-fab" aria-label="Загрузить видео">+</button>
+      </section>
+
+      <div id="stand-upload-modal" class="modal hidden">
+        <div class="modal-backdrop" data-close-stand-modal></div>
+        <div class="modal-card card stand-upload-modal">
+          <button type="button" class="modal-close" data-close-stand-modal aria-label="Закрыть">×</button>
+          <h3>Новое видео в Stand</h3>
           <input id="stand-caption" type="text" placeholder="Подпись к видео..." maxlength="300">
-          <label class="file-upload">
-            <span>Загрузить видео</span>
+          <label class="file-upload stand-file-label">
+            <span id="stand-file-label-text">Выбрать видео</span>
             <input id="stand-file" type="file" accept="video/*">
           </label>
-          <button type="button" id="btn-stand-upload" class="btn-primary">Опубликовать в Stand</button>
+          <button type="button" id="btn-stand-upload" class="btn-primary">Опубликовать</button>
         </div>
-        <div id="stand-feed" class="stand-feed"></div>
-      </section>
+      </div>
 
       <aside class="card section page-section hidden" data-section="search">
         <div class="section-title"><h2>Поиск людей</h2></div>

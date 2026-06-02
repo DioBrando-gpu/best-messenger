@@ -3,6 +3,9 @@ const standFile = document.querySelector('#stand-file');
 const standCaption = document.querySelector('#stand-caption');
 const btnStandUpload = document.querySelector('#btn-stand-upload');
 const navStand = document.querySelector('#nav-stand');
+const standFab = document.querySelector('#stand-fab');
+const standUploadModal = document.querySelector('#stand-upload-modal');
+const standFileLabelText = document.querySelector('#stand-file-label-text');
 
 let standPage = 1;
 let standHasMore = true;
@@ -142,26 +145,52 @@ function initStandObserver() {
   }, { once: false });
 }
 
+function openStandUploadModal() {
+  standUploadModal?.classList.remove('hidden');
+}
+
+function closeStandUploadModal() {
+  standUploadModal?.classList.add('hidden');
+}
+
+standFab?.addEventListener('click', openStandUploadModal);
+document.querySelectorAll('[data-close-stand-modal]').forEach(el => {
+  el.addEventListener('click', closeStandUploadModal);
+});
+
+standFile?.addEventListener('change', () => {
+  const name = standFile.files?.[0]?.name;
+  if (standFileLabelText) {
+    standFileLabelText.textContent = name ? name : 'Выбрать видео';
+  }
+});
+
+async function publishStandVideo() {
+  if (!standFile?.files?.length) {
+    setStatus('Выберите видео');
+    return;
+  }
+  const file = standFile.files[0];
+  if (file.size > 25 * 1024 * 1024) {
+    setStatus('Видео до 25 МБ');
+    return;
+  }
+  const video = await readFileAsDataURL(file);
+  await request('/api/stand/create', {
+    method: 'POST',
+    body: JSON.stringify({ video, caption: standCaption?.value || '' })
+  });
+  standFile.value = '';
+  if (standCaption) standCaption.value = '';
+  if (standFileLabelText) standFileLabelText.textContent = 'Выбрать видео';
+  closeStandUploadModal();
+  loadStandFeed(true);
+  setStatus('Опубликовано в Stand');
+}
+
 btnStandUpload?.addEventListener('click', async () => {
   try {
-    if (!standFile?.files?.length) {
-      setStatus('Выберите видео');
-      return;
-    }
-    const file = standFile.files[0];
-    if (file.size > 25 * 1024 * 1024) {
-      setStatus('Видео до 25 МБ');
-      return;
-    }
-    const video = await readFileAsDataURL(file);
-    await request('/api/stand/create', {
-      method: 'POST',
-      body: JSON.stringify({ video, caption: standCaption?.value || '' })
-    });
-    standFile.value = '';
-    if (standCaption) standCaption.value = '';
-    loadStandFeed(true);
-    setStatus('Опубликовано в Stand');
+    await publishStandVideo();
   } catch (error) {
     setStatus(error.message);
   }
@@ -171,5 +200,6 @@ navStand?.addEventListener('click', () => {
   showSection('stand');
   loadStandFeed(true);
 });
+
 
 window.loadStandFeed = loadStandFeed;

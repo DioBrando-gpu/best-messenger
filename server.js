@@ -1,8 +1,8 @@
 const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
-const fs = require('fs');
 const path = require('path');
+const store = require('./lib/store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,43 +24,16 @@ const DEFAULT_SETTINGS = {
   language: 'ru',
   theme: 'dark'
 };
-const USERS_FILE = path.join(__dirname, 'data', 'users.json');
-const POSTS_FILE = path.join(__dirname, 'data', 'posts.json');
-const MESSAGES_FILE = path.join(__dirname, 'data', 'messages.json');
-const VOICE_MESSAGES_FILE = path.join(__dirname, 'data', 'voice_messages.json');
-const STORIES_FILE = path.join(__dirname, 'data', 'stories.json');
-const GROUPS_FILE = path.join(__dirname, 'data', 'groups.json');
-const STANDS_FILE = path.join(__dirname, 'data', 'stands.json');
 const GROUP_SLUG_REGEX = /^[a-z0-9_]{5,32}$/;
 const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
 
-// Создаём папку data если её нет
-const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-// Инициализируем файлы данных если их нет
-if (!fs.existsSync(USERS_FILE)) {
-  fs.writeFileSync(USERS_FILE, '[]', 'utf8');
-}
-if (!fs.existsSync(POSTS_FILE)) {
-  fs.writeFileSync(POSTS_FILE, '[]', 'utf8');
-}
-if (!fs.existsSync(MESSAGES_FILE)) {
-  fs.writeFileSync(MESSAGES_FILE, '[]', 'utf8');
-}
-if (!fs.existsSync(VOICE_MESSAGES_FILE)) {
-  fs.writeFileSync(VOICE_MESSAGES_FILE, '[]', 'utf8');
-}
-if (!fs.existsSync(STORIES_FILE)) {
-  fs.writeFileSync(STORIES_FILE, '[]', 'utf8');
-}
-if (!fs.existsSync(GROUPS_FILE)) {
-  fs.writeFileSync(GROUPS_FILE, '[]', 'utf8');
-}
-if (!fs.existsSync(STANDS_FILE)) {
-  fs.writeFileSync(STANDS_FILE, '[]', 'utf8');
+function asyncHandler(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(err => {
+      console.error(err);
+      res.status(500).json({ message: err.message || 'Ошибка сервера' });
+    });
+  };
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -73,74 +46,52 @@ app.use(session({
   cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
 
-function readJSON(file) {
-  try {
-    const content = fs.readFileSync(file, 'utf8');
-    return JSON.parse(content || '[]');
-  } catch (error) {
-    return [];
-  }
+async function readUsers() {
+  return (await store.readUsers()).map(migrateUser);
 }
 
-function writeJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+async function writeUsers(users) {
+  await store.writeUsers(users.map(migrateUser));
 }
 
-function readUsers() {
-  const users = readJSON(USERS_FILE).map(migrateUser);
-  return users;
+async function readPosts() {
+  return store.readPosts();
 }
 
-function writeUsers(users) {
-  writeJSON(USERS_FILE, users.map(migrateUser));
+async function writePosts(posts) {
+  await store.writePosts(posts);
 }
 
-function readPosts() {
-  return readJSON(POSTS_FILE);
+async function readMessages() {
+  return store.readMessages();
 }
 
-function writePosts(posts) {
-  writeJSON(POSTS_FILE, posts);
+async function writeMessages(messages) {
+  await store.writeMessages(messages);
 }
 
-function readMessages() {
-  return readJSON(MESSAGES_FILE);
+async function readStories() {
+  return store.readStories();
 }
 
-function writeMessages(messages) {
-  writeJSON(MESSAGES_FILE, messages);
+async function writeStories(stories) {
+  await store.writeStories(stories);
 }
 
-function readVoiceMessages() {
-  return readJSON(VOICE_MESSAGES_FILE);
+async function readGroups() {
+  return store.readGroups();
 }
 
-function writeVoiceMessages(messages) {
-  writeJSON(VOICE_MESSAGES_FILE, messages);
+async function writeGroups(groups) {
+  await store.writeGroups(groups);
 }
 
-function readStories() {
-  return readJSON(STORIES_FILE);
+async function readStands() {
+  return store.readStands();
 }
 
-function writeStories(stories) {
-  writeJSON(STORIES_FILE, stories);
-}
-
-function readGroups() {
-  return readJSON(GROUPS_FILE);
-}
-
-function writeGroups(groups) {
-  writeJSON(GROUPS_FILE, groups);
-}
-
-function readStands() {
-  return readJSON(STANDS_FILE);
-}
-
-function writeStands(stands) {
-  writeJSON(STANDS_FILE, stands);
+async function writeStands(stands) {
+  await store.writeStands(stands);
 }
 
 function findGroupById(groups, id) {
@@ -159,9 +110,8 @@ function canPostInGroup(username, group) {
   return true;
 }
 
-function enrichStand(stand, viewer) {
-  const users = readUsers();
-  const user = users.find(u => u.username === stand.author);
+async function enrichStand(stand, viewer) {
+  const user = await store.getUser(stand.author);
   return {
     ...stand,
     avatar: user?.avatar || '👤',
@@ -238,22 +188,23 @@ function canMessageUser(viewerUsername, targetUser) {
   return true;
 }
 
-function publicUserPayload(user, viewerUsername) {
+async function publicUserPayload(user, viewerUsername) {
   const visible = canViewProfile(viewerUsername, user);
+  const postsCount = visible ? await store.countPostsByAuthor(user.username) : null;
   return {
     username: user.username,
     avatar: user.avatar,
     bio: visible ? user.bio : 'Профиль скрыт',
     followers: visible ? user.followers?.length || 0 : null,
     following: visible ? user.following?.length || 0 : null,
-    posts: visible ? readPosts().filter(p => p.author === user.username).length : null,
+    posts: postsCount,
     profileVisible: visible,
     canMessage: canMessageUser(viewerUsername, user),
     isFollowing: user.followers?.includes(viewerUsername) || false
   };
 }
 
-app.post('/api/register', (req, res) => {
+app.post('/api/register', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ message: 'Введите username и пароль' });
@@ -264,7 +215,7 @@ app.post('/api/register', (req, res) => {
     return res.status(400).json({ message: validation.message });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   if (isUsernameTaken(users, validation.username)) {
     return res.status(409).json({ message: 'Этот @username уже занят' });
   }
@@ -281,18 +232,18 @@ app.post('/api/register', (req, res) => {
   });
 
   users.push(newUser);
-  writeUsers(users);
+  await writeUsers(users);
   req.session.username = newUser.username;
   res.json({ message: 'Регистрация прошла успешно', username: newUser.username });
-});
+}));
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ message: 'Введите username и пароль' });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   const user = findUserByUsername(users, username);
   if (!user || user.password !== password) {
     return res.status(401).json({ message: 'Неверный username или пароль' });
@@ -300,7 +251,7 @@ app.post('/api/login', (req, res) => {
 
   req.session.username = user.username;
   res.json({ message: 'Вход выполнен', username: user.username });
-});
+}));
 
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => {
@@ -308,24 +259,24 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-app.get('/api/user', (req, res) => {
+app.get('/api/user', asyncHandler(async (req, res) => {
   if (!req.session || !req.session.username) {
     return res.json({ loggedIn: false });
   }
-  const user = findUserByUsername(readUsers(), req.session.username);
+  const user = await store.getUser(req.session.username);
   res.json({
     loggedIn: true,
     username: req.session.username,
     settings: user?.settings || defaultSettings()
   });
-});
+}));
 
-app.get('/api/feed', requireAuth, (req, res) => {
+app.get('/api/feed', requireAuth, asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
   const limit = parseInt(req.query.limit, 10) || 6;
   const random = req.query.random === 'true';
-  const posts = readPosts();
-  const users = readUsers();
+  const posts = await readPosts();
+  const users = await readUsers();
   const enrichedPosts = posts.map(post => {
     const user = users.find(u => u.username === post.author);
     return {
@@ -342,15 +293,15 @@ app.get('/api/feed', requireAuth, (req, res) => {
   const pagedPosts = sortedPosts.slice((page - 1) * limit, page * limit);
   const hasMore = page * limit < sortedPosts.length;
   res.json({ posts: pagedPosts, hasMore });
-});
+}));
 
-app.post('/api/posts/create', requireAuth, (req, res) => {
+app.post('/api/posts/create', requireAuth, asyncHandler(async (req, res) => {
   const { text, image } = req.body;
   if (!text || text.trim().length === 0) {
     return res.status(400).json({ message: 'Текст поста не может быть пустым' });
   }
 
-  const posts = readPosts();
+  const posts = await readPosts();
   const newPost = {
     id: Date.now(),
     author: req.session.username,
@@ -367,12 +318,12 @@ app.post('/api/posts/create', requireAuth, (req, res) => {
   };
 
   posts.push(newPost);
-  writePosts(posts);
+  await writePosts(posts);
   res.json({ message: 'Пост создан', post: newPost });
-});
+}));
 
-app.post('/api/posts/:id/like', requireAuth, (req, res) => {
-  const posts = readPosts();
+app.post('/api/posts/:id/like', requireAuth, asyncHandler(async (req, res) => {
+  const posts = await readPosts();
   const post = posts.find(p => p.id === parseInt(req.params.id));
   if (!post) {
     return res.status(404).json({ message: 'Пост не найден' });
@@ -385,12 +336,12 @@ app.post('/api/posts/:id/like', requireAuth, (req, res) => {
     post.likes.push(req.session.username);
   }
 
-  writePosts(posts);
+  await writePosts(posts);
   res.json({ message: 'Лайк обновлен', likes: post.likes });
-});
+}));
 
-app.post('/api/posts/:id/favorite', requireAuth, (req, res) => {
-  const posts = readPosts();
+app.post('/api/posts/:id/favorite', requireAuth, asyncHandler(async (req, res) => {
+  const posts = await readPosts();
   const post = posts.find(p => p.id === parseInt(req.params.id));
   if (!post) {
     return res.status(404).json({ message: 'Пост не найден' });
@@ -403,17 +354,17 @@ app.post('/api/posts/:id/favorite', requireAuth, (req, res) => {
   } else {
     post.favorites.push(req.session.username);
   }
-  writePosts(posts);
+  await writePosts(posts);
   res.json({ message: 'Избранное обновлено', favorites: post.favorites });
-});
+}));
 
-app.post('/api/posts/:id/comment', requireAuth, (req, res) => {
+app.post('/api/posts/:id/comment', requireAuth, asyncHandler(async (req, res) => {
   const { text } = req.body;
   if (!text || text.trim().length === 0) {
     return res.status(400).json({ message: 'Комментарий не может быть пустым' });
   }
 
-  const posts = readPosts();
+  const posts = await readPosts();
   const post = posts.find(p => p.id === parseInt(req.params.id));
   if (!post) {
     return res.status(404).json({ message: 'Пост не найден' });
@@ -426,30 +377,30 @@ app.post('/api/posts/:id/comment', requireAuth, (req, res) => {
     text: text.trim(),
     timestamp: new Date().toISOString()
   });
-  writePosts(posts);
+  await writePosts(posts);
   res.json({ message: 'Комментарий добавлен', comments: post.comments });
-});
+}));
 
-app.post('/api/posts/:id/share', requireAuth, (req, res) => {
-  const posts = readPosts();
+app.post('/api/posts/:id/share', requireAuth, asyncHandler(async (req, res) => {
+  const posts = await readPosts();
   const post = posts.find(p => p.id === parseInt(req.params.id));
   if (!post) {
     return res.status(404).json({ message: 'Пост не найден' });
   }
 
   post.shares = (post.shares || 0) + 1;
-  writePosts(posts);
+  await writePosts(posts);
   res.json({ message: 'Пост поделился', shares: post.shares });
-});
+}));
 
-app.post('/api/posts/:id/repost', requireAuth, (req, res) => {
-  const posts = readPosts();
+app.post('/api/posts/:id/repost', requireAuth, asyncHandler(async (req, res) => {
+  const posts = await readPosts();
   const post = posts.find(p => p.id === parseInt(req.params.id));
   if (!post) {
     return res.status(404).json({ message: 'Пост не найден' });
   }
 
-  const allPosts = readPosts();
+  const allPosts = await readPosts();
   post.reposts = (post.reposts || 0) + 1;
   const repost = {
     id: Date.now(),
@@ -466,13 +417,13 @@ app.post('/api/posts/:id/repost', requireAuth, (req, res) => {
     originalPostId: post.id
   };
   allPosts.push(repost);
-  writePosts(allPosts);
-  writePosts(posts);
+  await writePosts(allPosts);
+  await writePosts(posts);
   res.json({ message: 'Репост создан', repost });
-});
+}));
 
-app.post('/api/users/:username/follow', requireAuth, (req, res) => {
-  const users = readUsers();
+app.post('/api/users/:username/follow', requireAuth, asyncHandler(async (req, res) => {
+  const users = await readUsers();
   const target = findUserByUsername(users, req.params.username);
   const me = findUserByUsername(users, req.session.username);
   if (!target || !me) {
@@ -489,18 +440,18 @@ app.post('/api/users/:username/follow', requireAuth, (req, res) => {
     target.followers.splice(idx, 1);
     const followIdx = me.following.indexOf(target.username);
     if (followIdx > -1) me.following.splice(followIdx, 1);
-    writeUsers(users);
+    await writeUsers(users);
     return res.json({ message: 'Отписано', following: me.following.length, followers: target.followers.length });
   }
 
   target.followers.push(me.username);
   me.following.push(target.username);
-  writeUsers(users);
+  await writeUsers(users);
   res.json({ message: 'Подписано', following: me.following.length, followers: target.followers.length });
-});
+}));
 
-app.delete('/api/posts/:id', requireAuth, (req, res) => {
-  const posts = readPosts();
+app.delete('/api/posts/:id', requireAuth, asyncHandler(async (req, res) => {
+  const posts = await readPosts();
   const index = posts.findIndex(p => p.id === parseInt(req.params.id));
   if (index === -1) {
     return res.status(404).json({ message: 'Пост не найден' });
@@ -511,9 +462,9 @@ app.delete('/api/posts/:id', requireAuth, (req, res) => {
   }
 
   posts.splice(index, 1);
-  writePosts(posts);
+  await writePosts(posts);
   res.json({ message: 'Пост удален' });
-});
+}));
 
 function getDmContacts(username, messages) {
   const userMessages = messages.filter(m =>
@@ -537,10 +488,10 @@ function getDmContacts(username, messages) {
   }));
 }
 
-app.get('/api/messages', requireAuth, (req, res) => {
+app.get('/api/messages', requireAuth, asyncHandler(async (req, res) => {
   const username = req.session.username;
-  const messages = readMessages();
-  const groups = readGroups();
+  const messages = await readMessages();
+  const groups = await readGroups();
   const dmContacts = getDmContacts(username, messages);
 
   const groupContacts = groups
@@ -568,16 +519,16 @@ app.get('/api/messages', requireAuth, (req, res) => {
   });
 
   res.json({ contacts });
-});
+}));
 
-app.get('/api/chat/dm/:username', requireAuth, (req, res) => {
+app.get('/api/chat/dm/:username', requireAuth, asyncHandler(async (req, res) => {
   const otherUser = normalizeUsername(req.params.username);
-  const users = readUsers();
+  const users = await readUsers();
   if (!findUserByUsername(users, otherUser)) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
 
-  const messages = readMessages();
+  const messages = await readMessages();
   const chat = messages.filter(m =>
     !m.groupId &&
     ((m.from === req.session.username && m.to === otherUser) ||
@@ -587,18 +538,18 @@ app.get('/api/chat/dm/:username', requireAuth, (req, res) => {
   chat.forEach(msg => {
     if (msg.to === req.session.username && !msg.read) msg.read = true;
   });
-  writeMessages(messages);
+  await writeMessages(messages);
 
   res.json({ messages: chat, withUser: otherUser, chatType: 'dm' });
-});
+}));
 
-app.get('/api/chat/:username', requireAuth, (req, res) => {
+app.get('/api/chat/:username', requireAuth, asyncHandler(async (req, res) => {
   const otherUser = normalizeUsername(req.params.username);
-  const users = readUsers();
+  const users = await readUsers();
   if (!findUserByUsername(users, otherUser)) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
-  const messages = readMessages();
+  const messages = await readMessages();
   const chat = messages.filter(m =>
     !m.groupId &&
     ((m.from === req.session.username && m.to === otherUser) ||
@@ -607,17 +558,17 @@ app.get('/api/chat/:username', requireAuth, (req, res) => {
   chat.forEach(msg => {
     if (msg.to === req.session.username && !msg.read) msg.read = true;
   });
-  writeMessages(messages);
+  await writeMessages(messages);
   res.json({ messages: chat, withUser: otherUser, chatType: 'dm' });
-});
+}));
 
-app.get('/api/chat/group/:groupId', requireAuth, (req, res) => {
-  const group = findGroupById(readGroups(), req.params.groupId);
+app.get('/api/chat/group/:groupId', requireAuth, asyncHandler(async (req, res) => {
+  const group = findGroupById(await readGroups(), req.params.groupId);
   if (!group || !isGroupMember(group, req.session.username)) {
     return res.status(404).json({ message: 'Группа не найдена' });
   }
 
-  const messages = readMessages();
+  const messages = await readMessages();
   const chat = messages
     .filter(m => m.groupId === group.id)
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
@@ -627,21 +578,21 @@ app.get('/api/chat/group/:groupId', requireAuth, (req, res) => {
       msg.read = true;
     }
   });
-  writeMessages(messages);
+  await writeMessages(messages);
 
   res.json({ messages: chat, group, chatType: 'group' });
-});
+}));
 
-app.post('/api/messages/send', requireAuth, (req, res) => {
+app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
   const { to, groupId, text } = req.body;
   if (!text || !String(text).trim()) {
     return res.status(400).json({ message: 'Введите текст сообщения' });
   }
 
-  const messages = readMessages();
+  const messages = await readMessages();
 
   if (groupId) {
-    const group = findGroupById(readGroups(), groupId);
+    const group = findGroupById(await readGroups(), groupId);
     if (!group || !isGroupMember(group, req.session.username)) {
       return res.status(404).json({ message: 'Группа не найдена' });
     }
@@ -658,7 +609,7 @@ app.post('/api/messages/send', requireAuth, (req, res) => {
       read: false
     };
     messages.push(newMessage);
-    writeMessages(messages);
+    await writeMessages(messages);
     return res.json({ message: 'Сообщение отправлено', msg: newMessage });
   }
 
@@ -666,7 +617,7 @@ app.post('/api/messages/send', requireAuth, (req, res) => {
     return res.status(400).json({ message: 'Укажите получателя' });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   const recipient = findUserByUsername(users, to);
   if (!recipient) {
     return res.status(404).json({ message: 'Пользователь не найден' });
@@ -686,12 +637,12 @@ app.post('/api/messages/send', requireAuth, (req, res) => {
   };
 
   messages.push(newMessage);
-  writeMessages(messages);
+  await writeMessages(messages);
   res.json({ message: 'Сообщение отправлено', msg: newMessage });
-});
+}));
 
-app.get('/api/groups', requireAuth, (req, res) => {
-  const groups = readGroups()
+app.get('/api/groups', requireAuth, asyncHandler(async (req, res) => {
+  const groups = await readGroups()
     .filter(g => isGroupMember(g, req.session.username))
     .map(g => ({
       id: g.id,
@@ -702,9 +653,9 @@ app.get('/api/groups', requireAuth, (req, res) => {
       membersCount: g.members?.length || 0
     }));
   res.json({ groups });
-});
+}));
 
-app.post('/api/groups/create', requireAuth, (req, res) => {
+app.post('/api/groups/create', requireAuth, asyncHandler(async (req, res) => {
   const { title, type, slug, members } = req.body;
   if (!title || !String(title).trim()) {
     return res.status(400).json({ message: 'Укажите название' });
@@ -716,12 +667,12 @@ app.post('/api/groups/create', requireAuth, (req, res) => {
     if (!GROUP_SLUG_REGEX.test(groupSlug)) {
       return res.status(400).json({ message: 'Slug: a-z, 0-9, _, минимум 5 символов' });
     }
-    if (readGroups().some(g => g.slug === groupSlug)) {
+    if ((await readGroups()).some(g => g.slug === groupSlug)) {
       return res.status(409).json({ message: 'Такой slug уже занят' });
     }
   }
 
-  const groups = readGroups();
+  const groups = await readGroups();
   const id = `g_${Date.now()}`;
   const owner = req.session.username;
   const memberSet = new Set([owner, ...(Array.isArray(members) ? members : [])].map(normalizeUsername));
@@ -736,12 +687,12 @@ app.post('/api/groups/create', requireAuth, (req, res) => {
     createdAt: new Date().toISOString()
   };
   groups.push(newGroup);
-  writeGroups(groups);
+  await writeGroups(groups);
   res.json({ message: 'Создано', group: newGroup });
-});
+}));
 
-app.post('/api/groups/:id/join', requireAuth, (req, res) => {
-  const groups = readGroups();
+app.post('/api/groups/:id/join', requireAuth, asyncHandler(async (req, res) => {
+  const groups = await readGroups();
   const group = findGroupById(groups, req.params.id);
   if (!group) return res.status(404).json({ message: 'Не найдено' });
   if (group.type === 'channel') {
@@ -749,32 +700,32 @@ app.post('/api/groups/:id/join', requireAuth, (req, res) => {
   }
   if (!isGroupMember(group, req.session.username)) {
     group.members.push(req.session.username);
-    writeGroups(groups);
+    await writeGroups(groups);
   }
   res.json({ message: 'Вы в группе', group });
-});
+}));
 
-app.post('/api/groups/:id/invite', requireAuth, (req, res) => {
+app.post('/api/groups/:id/invite', requireAuth, asyncHandler(async (req, res) => {
   const { username } = req.body;
-  const groups = readGroups();
+  const groups = await readGroups();
   const group = findGroupById(groups, req.params.id);
   if (!group) return res.status(404).json({ message: 'Не найдено' });
   if (group.owner !== req.session.username && !group.admins?.includes(req.session.username)) {
     return res.status(403).json({ message: 'Нет прав' });
   }
-  const user = findUserByUsername(readUsers(), username);
+  const user = await store.getUser(username);
   if (!user) return res.status(404).json({ message: 'Пользователь не найден' });
   if (!isGroupMember(group, user.username)) {
     group.members.push(user.username);
-    writeGroups(groups);
+    await writeGroups(groups);
   }
   res.json({ message: 'Участник добавлен' });
-});
+}));
 
-app.get('/api/profile', requireAuth, (req, res) => {
-  const users = readUsers();
+app.get('/api/profile', requireAuth, asyncHandler(async (req, res) => {
+  const users = await readUsers();
   const user = findUserByUsername(users, req.session.username);
-  const posts = readPosts().filter(p => p.author === req.session.username);
+  const posts = (await readPosts()).filter(p => p.author === req.session.username);
 
   res.json({
     username: req.session.username,
@@ -785,19 +736,18 @@ app.get('/api/profile', requireAuth, (req, res) => {
     posts: posts.length,
     settings: user?.settings || defaultSettings()
   });
-});
+}));
 
-app.get('/api/settings', requireAuth, (req, res) => {
-  const user = findUserByUsername(readUsers(), req.session.username);
+app.get('/api/settings', requireAuth, asyncHandler(async (req, res) => {
+  const user = await store.getUser(req.session.username);
   if (!user) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
   res.json({ settings: user.settings });
-});
+}));
 
-app.put('/api/settings', requireAuth, (req, res) => {
-  const users = readUsers();
-  const user = findUserByUsername(users, req.session.username);
+app.put('/api/settings', requireAuth, asyncHandler(async (req, res) => {
+  const user = await store.getUser(req.session.username);
   if (!user) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
@@ -810,12 +760,12 @@ app.put('/api/settings', requireAuth, (req, res) => {
     notifications: { ...defaultSettings().notifications, ...user.settings.notifications, ...incoming.notifications },
     privacy: { ...defaultSettings().privacy, ...user.settings.privacy, ...incoming.privacy }
   };
-  writeUsers(users);
+  await store.saveUser(migrateUser(user));
   res.json({ message: 'Настройки сохранены', settings: user.settings });
-});
+}));
 
-app.patch('/api/profile', requireAuth, (req, res) => {
-  const users = readUsers();
+app.patch('/api/profile', requireAuth, asyncHandler(async (req, res) => {
+  const users = await readUsers();
   const user = findUserByUsername(users, req.session.username);
   if (!user) {
     return res.status(404).json({ message: 'Пользователь не найден' });
@@ -835,69 +785,46 @@ app.patch('/api/profile', requireAuth, (req, res) => {
     }
     const oldUsername = user.username;
     if (oldUsername !== validation.username) {
-      const posts = readPosts();
-      posts.forEach(post => {
-        if (post.author === oldUsername) post.author = validation.username;
-        if (post.originalAuthor === oldUsername) post.originalAuthor = validation.username;
-        post.likes = (post.likes || []).map(name => name === oldUsername ? validation.username : name);
-        post.favorites = (post.favorites || []).map(name => name === oldUsername ? validation.username : name);
-        post.comments = (post.comments || []).map(comment => (
-          comment.author === oldUsername ? { ...comment, author: validation.username } : comment
-        ));
-      });
-      writePosts(posts);
-
-      const messages = readMessages();
-      messages.forEach(msg => {
-        if (msg.from === oldUsername) msg.from = validation.username;
-        if (msg.to === oldUsername) msg.to = validation.username;
-      });
-      writeMessages(messages);
-
-      users.forEach(u => {
-        u.followers = (u.followers || []).map(name => name === oldUsername ? validation.username : name);
-        u.following = (u.following || []).map(name => name === oldUsername ? validation.username : name);
-      });
-
+      await store.renameUsername(oldUsername, validation.username);
       req.session.username = validation.username;
       user.username = validation.username;
     }
   }
 
-  writeUsers(users);
+  await store.saveUser(user);
   res.json({
     message: 'Профиль обновлён',
     username: user.username,
     bio: user.bio
   });
-});
+}));
 
-app.get('/api/account/stats', requireAuth, (req, res) => {
+app.get('/api/account/stats', requireAuth, asyncHandler(async (req, res) => {
   const username = req.session.username;
-  const messages = readMessages().filter(m => m.from === username || m.to === username);
-  const posts = readPosts().filter(p => p.author === username);
+  const messages = (await readMessages()).filter(m => m.from === username || m.to === username);
+  const posts = (await readPosts()).filter(p => p.author === username);
   res.json({
     messagesCount: messages.length,
     postsCount: posts.length,
     cacheHint: 'Клиентские настройки темы и языка хранятся в браузере и на сервере'
   });
-});
+}));
 
-app.post('/api/account/clear-cache', requireAuth, (req, res) => {
+app.post('/api/account/clear-cache', requireAuth, asyncHandler(async (req, res) => {
   res.json({ message: 'Серверный кэш не используется. Очистите данные в браузере через раздел «Данные и память».' });
-});
+}));
 
-app.get('/api/users/lookup/:username', requireAuth, (req, res) => {
-  const user = findUserByUsername(readUsers(), req.params.username);
+app.get('/api/users/lookup/:username', requireAuth, asyncHandler(async (req, res) => {
+  const user = await store.getUser(req.params.username);
   if (!user) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
-  res.json(publicUserPayload(user, req.session.username));
-});
+  res.json(await publicUserPayload(user, req.session.username));
+}));
 
-app.get('/api/users/search', requireAuth, (req, res) => {
+app.get('/api/users/search', requireAuth, asyncHandler(async (req, res) => {
   const query = normalizeUsername(req.query.q || '');
-  const users = readUsers().filter(u => {
+  const users = (await readUsers()).filter(u => {
     if (u.username === req.session.username) return false;
     if (!query) return true;
     return u.username.includes(query) || u.username === query;
@@ -910,25 +837,26 @@ app.get('/api/users/search', requireAuth, (req, res) => {
     return a.username.localeCompare(b.username);
   });
 
-  res.json({
-    users: sorted
+  const usersPayload = await Promise.all(
+    sorted
       .filter(u => query.length >= 1 || canViewProfile(req.session.username, u))
       .slice(0, 30)
       .map(u => publicUserPayload(u, req.session.username))
-  });
-});
+  );
+  res.json({ users: usersPayload });
+}));
 
-app.get('/api/stand/feed', requireAuth, (req, res) => {
+app.get('/api/stand/feed', requireAuth, asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
   const limit = parseInt(req.query.limit, 10) || 5;
-  const stands = readStands()
-    .map(s => enrichStand(s, req.session.username))
+  const standsRaw = await readStands();
+  const stands = (await Promise.all(standsRaw.map(s => enrichStand(s, req.session.username))))
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const slice = stands.slice((page - 1) * limit, page * limit);
   res.json({ stands: slice, hasMore: page * limit < stands.length });
-});
+}));
 
-app.post('/api/stand/create', requireAuth, (req, res) => {
+app.post('/api/stand/create', requireAuth, asyncHandler(async (req, res) => {
   const { video, caption } = req.body;
   if (!video) {
     return res.status(400).json({ message: 'Загрузите видео' });
@@ -936,7 +864,7 @@ app.post('/api/stand/create', requireAuth, (req, res) => {
   if (video.length > MAX_VIDEO_BYTES) {
     return res.status(400).json({ message: 'Видео слишком большое (макс. ~25 МБ)' });
   }
-  const stands = readStands();
+  const stands = await readStands();
   const newStand = {
     id: Date.now(),
     author: req.session.username,
@@ -950,21 +878,21 @@ app.post('/api/stand/create', requireAuth, (req, res) => {
     reposts: 0
   };
   stands.push(newStand);
-  writeStands(stands);
+  await writeStands(stands);
   res.json({ message: 'Видео опубликовано в Stand', stand: newStand });
-});
+}));
 
-function standAction(standId, updater) {
-  const stands = readStands();
+async function standAction(standId, updater) {
+  const stands = await readStands();
   const stand = stands.find(s => s.id === parseInt(standId, 10));
   if (!stand) return null;
   updater(stand);
-  writeStands(stands);
+  await writeStands(stands);
   return stand;
 }
 
-app.post('/api/stand/:id/like', requireAuth, (req, res) => {
-  const stand = standAction(req.params.id, (s) => {
+app.post('/api/stand/:id/like', requireAuth, asyncHandler(async (req, res) => {
+  const stand = await standAction(req.params.id, (s) => {
     s.likes = s.likes || [];
     const i = s.likes.indexOf(req.session.username);
     if (i > -1) s.likes.splice(i, 1);
@@ -972,10 +900,10 @@ app.post('/api/stand/:id/like', requireAuth, (req, res) => {
   });
   if (!stand) return res.status(404).json({ message: 'Не найдено' });
   res.json({ likes: stand.likes });
-});
+}));
 
-app.post('/api/stand/:id/favorite', requireAuth, (req, res) => {
-  const stand = standAction(req.params.id, (s) => {
+app.post('/api/stand/:id/favorite', requireAuth, asyncHandler(async (req, res) => {
+  const stand = await standAction(req.params.id, (s) => {
     s.favorites = s.favorites || [];
     const i = s.favorites.indexOf(req.session.username);
     if (i > -1) s.favorites.splice(i, 1);
@@ -983,12 +911,12 @@ app.post('/api/stand/:id/favorite', requireAuth, (req, res) => {
   });
   if (!stand) return res.status(404).json({ message: 'Не найдено' });
   res.json({ favorites: stand.favorites });
-});
+}));
 
-app.post('/api/stand/:id/comment', requireAuth, (req, res) => {
+app.post('/api/stand/:id/comment', requireAuth, asyncHandler(async (req, res) => {
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ message: 'Пустой комментарий' });
-  const stand = standAction(req.params.id, (s) => {
+  const stand = await standAction(req.params.id, (s) => {
     s.comments = s.comments || [];
     s.comments.push({
       id: Date.now(),
@@ -999,16 +927,16 @@ app.post('/api/stand/:id/comment', requireAuth, (req, res) => {
   });
   if (!stand) return res.status(404).json({ message: 'Не найдено' });
   res.json({ comments: stand.comments });
-});
+}));
 
-app.post('/api/stand/:id/share', requireAuth, (req, res) => {
-  const stand = standAction(req.params.id, (s) => { s.shares = (s.shares || 0) + 1; });
+app.post('/api/stand/:id/share', requireAuth, asyncHandler(async (req, res) => {
+  const stand = await standAction(req.params.id, (s) => { s.shares = (s.shares || 0) + 1; });
   if (!stand) return res.status(404).json({ message: 'Не найдено' });
   res.json({ shares: stand.shares });
-});
+}));
 
-app.post('/api/stand/:id/repost', requireAuth, (req, res) => {
-  const stands = readStands();
+app.post('/api/stand/:id/repost', requireAuth, asyncHandler(async (req, res) => {
+  const stands = await readStands();
   const original = stands.find(s => s.id === parseInt(req.params.id, 10));
   if (!original) return res.status(404).json({ message: 'Не найдено' });
   original.reposts = (original.reposts || 0) + 1;
@@ -1027,52 +955,51 @@ app.post('/api/stand/:id/repost', requireAuth, (req, res) => {
     originalStandId: original.id
   };
   stands.push(repost);
-  writeStands(stands);
+  await writeStands(stands);
   res.json({ message: 'Репост в Stand', repost });
-});
+}));
 
-app.delete('/api/stand/:id', requireAuth, (req, res) => {
-  const stands = readStands();
+app.delete('/api/stand/:id', requireAuth, asyncHandler(async (req, res) => {
+  const stands = await readStands();
   const idx = stands.findIndex(s => s.id === parseInt(req.params.id, 10));
   if (idx === -1) return res.status(404).json({ message: 'Не найдено' });
   if (stands[idx].author !== req.session.username) {
     return res.status(403).json({ message: 'Можно удалить только своё видео' });
   }
   stands.splice(idx, 1);
-  writeStands(stands);
+  await writeStands(stands);
   res.json({ message: 'Удалено' });
-});
+}));
 
-app.get('/api/users/:username/profile', requireAuth, (req, res) => {
-  const users = readUsers();
+app.get('/api/users/:username/profile', requireAuth, asyncHandler(async (req, res) => {
+  const users = await readUsers();
   const user = findUserByUsername(users, req.params.username);
   if (!user) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
-  res.json(publicUserPayload(user, req.session.username));
-});
+  res.json(await publicUserPayload(user, req.session.username));
+}));
 
-app.get('/api/user/:username', requireAuth, (req, res) => {
-  const users = readUsers();
+app.get('/api/user/:username', requireAuth, asyncHandler(async (req, res) => {
+  const users = await readUsers();
   const user = findUserByUsername(users, req.params.username);
   if (!user) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
-  res.json(publicUserPayload(user, req.session.username));
-});
+  res.json(await publicUserPayload(user, req.session.username));
+}));
 
-app.post('/api/voice/send', requireAuth, (req, res) => {
+app.post('/api/voice/send', requireAuth, asyncHandler(async (req, res) => {
   const { to, audioData } = req.body;
   if (!to || !audioData) {
     return res.status(400).json({ message: 'Укажите получателя и аудио' });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   if (!users.find(u => u.username === to)) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
 
-  const voiceMessages = readVoiceMessages();
   const newVoiceMsg = {
     id: Date.now(),
     from: req.session.username,
@@ -1082,18 +1009,17 @@ app.post('/api/voice/send', requireAuth, (req, res) => {
     read: false
   };
 
-  voiceMessages.push(newVoiceMsg);
-  writeVoiceMessages(voiceMessages);
+  await store.addVoiceMessage(newVoiceMsg);
   res.json({ message: 'Голосовое сообщение отправлено', msg: newVoiceMsg });
-});
+}));
 
-app.post('/api/stories/create', requireAuth, (req, res) => {
+app.post('/api/stories/create', requireAuth, asyncHandler(async (req, res) => {
   const { media, duration } = req.body;
   if (!media) {
     return res.status(400).json({ message: 'Укажите контент истории' });
   }
 
-  const stories = readStories();
+  const stories = await readStories();
   const newStory = {
     id: Date.now(),
     author: req.session.username,
@@ -1104,13 +1030,13 @@ app.post('/api/stories/create', requireAuth, (req, res) => {
   };
 
   stories.push(newStory);
-  writeStories(stories);
+  await writeStories(stories);
   res.json({ message: 'История создана', story: newStory });
-});
+}));
 
-app.get('/api/stories/feed', requireAuth, (req, res) => {
-  const stories = readStories();
-  const users = readUsers();
+app.get('/api/stories/feed', requireAuth, asyncHandler(async (req, res) => {
+  const stories = await readStories();
+  const users = await readUsers();
   const currentUser = users.find(u => u.username === req.session.username);
   
   const enrichedStories = stories
@@ -1125,21 +1051,20 @@ app.get('/api/stories/feed', requireAuth, (req, res) => {
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   
   res.json({ stories: enrichedStories });
-});
+}));
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-function migrateUsersFile() {
-  const raw = readJSON(USERS_FILE);
-  if (!Array.isArray(raw) || raw.length === 0) return;
-  const migrated = raw.map(migrateUser);
-  writeJSON(USERS_FILE, migrated);
+async function start() {
+  const info = await store.init();
+  app.listen(PORT, () => {
+    console.log(`Server started on port ${PORT} (storage: ${info.mode})`);
+  });
 }
 
-migrateUsersFile();
-
-app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
+start().catch(err => {
+  console.error('Failed to start:', err);
+  process.exit(1);
 });

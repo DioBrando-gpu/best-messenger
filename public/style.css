@@ -295,19 +295,57 @@ button {
   overflow-y: auto;
 }
 
-.stand-upload {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  margin-bottom: 8px;
+.stand-section {
+  position: relative;
+  padding: 0 !important;
+  overflow: hidden;
 }
 
-.stand-upload input[type="text"] {
+.stand-fab {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  font-size: 2rem;
+  line-height: 1;
+  font-weight: 300;
+  color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #4f46e5);
+  box-shadow: 0 8px 28px rgba(139, 92, 246, 0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+body.on-stand .stand-fab {
+  display: flex;
+}
+
+.stand-upload-modal {
+  display: grid;
+  gap: 14px;
+}
+
+.stand-upload-modal h3 {
+  margin: 0 0 4px;
+}
+
+.stand-upload-modal input[type="text"] {
   padding: 12px 14px;
   border-radius: 14px;
   border: 1px solid var(--input-border);
   background: var(--input-bg);
   color: inherit;
+  width: 100%;
+}
+
+.stand-file-label {
+  width: 100%;
+  justify-content: center;
 }
 
 #group-modal .modal-card {
