@@ -21,27 +21,91 @@ const searchUsersInput = document.querySelector('#search-users');
 const searchResults = document.querySelector('#search-results');
 const searchPeopleList = document.querySelector('#search-people');
 const navSearch = document.querySelector('#nav-search');
+const navSettings = document.querySelector('#nav-settings');
+const settingsPanels = document.querySelector('#settings-panels');
+const userProfileModal = document.querySelector('#user-profile-modal');
+const userProfileContent = document.querySelector('#user-profile-content');
+const chatHeader = document.querySelector('#chat-header');
+const navStand = document.querySelector('#nav-stand');
+const groupModal = document.querySelector('#group-modal');
+const btnSearchExact = document.querySelector('#btn-search-exact');
+
+const USERNAME_REGEX = /^[a-z0-9_]{5,32}$/;
 
 let currentChat = null;
+let currentChatType = 'dm';
+let currentGroupId = null;
 let searchTimeout = null;
 let currentUser = null;
+let appSettings = null;
 let feedPage = 1;
 let feedHasMore = true;
 let feedLoading = false;
+window.appLang = localStorage.getItem('dio_lang') || 'ru';
+
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function applyTheme(theme) {
+  document.body.classList.toggle('theme-light', theme === 'light');
+  document.body.classList.toggle('theme-dark', theme !== 'light');
+}
+
+function applyLanguage(lang) {
+  window.appLang = lang === 'en' ? 'en' : 'ru';
+  localStorage.setItem('dio_lang', window.appLang);
+  document.documentElement.lang = window.appLang;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    const text = t(key);
+    if (text) el.textContent = text;
+  });
+  const searchInput = document.querySelector('#search-users');
+  if (searchInput) searchInput.placeholder = t('search_placeholder');
+}
+
+function playMessageSound() {
+  if (!appSettings?.notifications?.sound) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    gain.gain.value = 0.04;
+    osc.start();
+    osc.stop(ctx.currentTime + 0.08);
+  } catch (_) { /* ignore */ }
+}
 
 function showSection(section) {
   pageSections.forEach(sec => sec.classList.toggle('hidden', sec.dataset.section !== section));
-  pageTitle.textContent = section === 'feed' ? 'Лента' : section === 'messages' ? 'Сообщения' : section === 'search' ? 'Поиск' : 'Профиль';
+  const titles = {
+    feed: t('title_feed'),
+    messages: t('title_messages'),
+    search: t('title_search'),
+    profile: t('title_profile'),
+    settings: t('title_settings'),
+    stand: 'Stand'
+  };
+  pageTitle.textContent = titles[section] || titles.feed;
   navFeed.classList.toggle('active', section === 'feed');
   navMessages.classList.toggle('active', section === 'messages');
   navSearch?.classList.toggle('active', section === 'search');
   navProfile.classList.toggle('active', section === 'profile');
-  
+  navSettings?.classList.toggle('active', section === 'settings');
+  navStand?.classList.toggle('active', section === 'stand');
+
   if (section === 'messages') {
     loadContacts();
     currentChat = null;
     chatArea.classList.add('hidden');
     contactsList.classList.remove('hidden');
+  }
+  if (section === 'settings') {
+    renderSettingsUI();
   }
 }
 
@@ -67,11 +131,22 @@ async function loadUser() {
       return;
     }
     currentUser = user.username;
-    setStatus(`Добро пожаловать, ${user.username}! 🔥`);
+    appSettings = user.settings || null;
+    if (appSettings) {
+      applyTheme(appSettings.theme);
+      applyLanguage(appSettings.language);
+    } else {
+      applyTheme(localStorage.getItem('dio_theme') || 'dark');
+      applyLanguage(window.appLang);
+    }
+    setStatus(`Добро пожаловать, @${user.username}! 🔥`);
     feedPage = 1;
     feedHasMore = true;
     loadFeed();
     loadProfile();
+    applyLanguage(appSettings?.language || window.appLang);
+    initEmojiPickers();
+    window.currentUser = currentUser;
   } catch (error) {
     console.error(error);
     window.location.href = '/login.html';
@@ -277,29 +352,49 @@ function readFileAsDataURL(file) {
   });
 }
 
+function initEmojiPickers() {
+  attachEmojiPicker({
+    toggleBtn: document.querySelector('#post-emoji-toggle'),
+    panel: document.querySelector('#post-emoji-panel'),
+    input: postText
+  });
+  attachEmojiPicker({
+    toggleBtn: document.querySelector('#msg-emoji-toggle'),
+    panel: document.querySelector('#msg-emoji-panel'),
+    input: messageText
+  });
+}
+
 async function loadContacts() {
   try {
     const data = await request('/api/messages');
     contactsList.innerHTML = '';
     if (!data.contacts || data.contacts.length === 0) {
-      contactsList.innerHTML = '<p style="color: #a5b4fc; padding: 20px;">Нет сообщений. Начните общение!</p>';
+      contactsList.innerHTML = '<p style="color: var(--text-muted); padding: 20px;">Нет чатов. Найдите @username в поиске или создайте группу.</p>';
       return;
     }
 
     data.contacts.forEach(contact => {
       const item = document.createElement('div');
       item.className = 'contact-item';
+      const icon = contact.type === 'channel' ? '📢' : contact.type === 'group' ? '👥' : '👤';
       item.innerHTML = `
         <div class="contact-info">
-          <div class="contact-avatar">👤</div>
+          <div class="contact-avatar">${icon}</div>
           <div class="contact-text">
-            <strong>${contact.name}</strong>
+            <strong>${contact.displayName || contact.name}</strong>
             <small>${contact.lastMessage?.substring(0, 40) || 'Нет сообщений'}</small>
           </div>
           ${contact.unread ? '<div class="contact-unread"></div>' : ''}
         </div>
       `;
-      item.addEventListener('click', () => openChat(contact.name));
+      item.addEventListener('click', () => {
+        if (contact.type === 'group' || contact.type === 'channel') {
+          openGroupChat(contact.id, contact.displayName);
+        } else {
+          openDmChat(contact.name);
+        }
+      });
       contactsList.appendChild(item);
     });
   } catch (error) {
@@ -307,39 +402,73 @@ async function loadContacts() {
   }
 }
 
+function renderSearchUserItem(user, container, { compact = false } = {}) {
+  const item = document.createElement('div');
+  item.className = compact ? 'search-result-item' : 'contact-item';
+  item.innerHTML = `
+    <div class="contact-info" style="flex:1">
+      <div class="contact-avatar">${user.avatar || '👤'}</div>
+      <div class="contact-text">
+        <strong>@${user.username}</strong>
+        <small>${user.profileVisible === false ? t('profile_hidden') : user.bio}</small>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button type="button" class="btn-primary btn-view-profile" data-username="${user.username}">${t('view_profile')}</button>
+      <button type="button" class="btn-primary btn-chat-user" data-username="${user.username}" ${user.canMessage ? '' : 'disabled title="Нельзя написать (настройки приватности)"'}>${t('write_message')}</button>
+    </div>
+  `;
+  item.querySelector('.btn-view-profile')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openUserProfile(user.username);
+  });
+  item.querySelector('.btn-chat-user')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!user.canMessage) {
+      setStatus('Пользователь ограничил входящие сообщения');
+      return;
+    }
+    startDmChat(user.username);
+  });
+  container.appendChild(item);
+}
+
+async function lookupExactUsername(username) {
+  const q = normalizeUsername(username);
+  if (!USERNAME_REGEX.test(q)) {
+    setStatus(t('username_hint'));
+    return;
+  }
+  try {
+    const user = await request(`/api/users/lookup/${encodeURIComponent(q)}`);
+    searchResults.innerHTML = '';
+    renderSearchUserItem(user, searchResults, { compact: true });
+    searchResults.classList.remove('hidden');
+    setStatus(`Найден @${user.username}`);
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
 async function searchUsers(query) {
-  if (!query.trim()) {
+  const q = normalizeUsername(query);
+  if (!q) {
     searchResults.classList.add('hidden');
     searchResults.innerHTML = '';
     return;
   }
 
   try {
-    const data = await request(`/api/users/search?q=${encodeURIComponent(query)}`);
+    const data = await request(`/api/users/search?q=${encodeURIComponent(q)}`);
     searchResults.innerHTML = '';
-    
+
     if (!data.users || data.users.length === 0) {
-      searchResults.innerHTML = '<p style="padding: 10px; color: #a5b4fc;">Пользователей не найдено</p>';
+      searchResults.innerHTML = `<p style="padding: 10px; color: var(--text-muted);">—</p>`;
       searchResults.classList.remove('hidden');
       return;
     }
 
-    data.users.forEach(user => {
-      const item = document.createElement('div');
-      item.className = 'search-result-item';
-      item.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <div style="font-size: 1.5rem;">${user.avatar}</div>
-          <div>
-            <strong>@${user.username}</strong>
-            <small style="display: block; color: #a5b4fc;">${user.bio}</small>
-          </div>
-        </div>
-      `;
-      item.addEventListener('click', () => startChat(user.username));
-      searchResults.appendChild(item);
-    });
-    
+    data.users.forEach(user => renderSearchUserItem(user, searchResults, { compact: true }));
     searchResults.classList.remove('hidden');
   } catch (error) {
     setStatus(error.message);
@@ -350,23 +479,7 @@ async function loadSearchPeople() {
   try {
     const data = await request('/api/users/search?q=');
     searchPeopleList.innerHTML = '';
-    data.users.forEach(user => {
-      const item = document.createElement('div');
-      item.className = 'contact-item';
-      item.innerHTML = `
-        <div class="contact-info">
-          <div class="contact-avatar">${user.avatar}</div>
-          <div class="contact-text">
-            <strong>@${user.username}</strong>
-            <small>${user.bio}</small>
-          </div>
-        </div>
-        <button class="btn-primary follow-btn" data-username="${user.username}">Подписаться</button>
-      `;
-      item.querySelector('.follow-btn')?.addEventListener('click', () => followUser(user.username, item));
-      item.addEventListener('click', () => startChat(user.username));
-      searchPeopleList.appendChild(item);
-    });
+    data.users.forEach(user => renderSearchUserItem(user, searchPeopleList));
   } catch (error) {
     setStatus(error.message);
   }
@@ -388,77 +501,324 @@ async function followUser(username, item) {
   }
 }
 
-async function startChat(username) {
-  try {
-    currentChat = username;
-    searchResults.classList.add('hidden');
-    searchUsersInput.value = '';
-    await openChat(username);
-  } catch (error) {
-    setStatus(error.message);
-  }
+async function startDmChat(username) {
+  showSection('messages');
+  searchResults?.classList.add('hidden');
+  if (searchUsersInput) searchUsersInput.value = '';
+  userProfileModal?.classList.add('hidden');
+  await openDmChat(username);
 }
 
-async function openChat(username) {
-  try {
-    currentChat = username;
-    const data = await request(`/api/chat/${username}`);
-    chatMessages.innerHTML = '';
-    
-    data.messages.forEach(msg => {
-      const msgEl = document.createElement('div');
-      msgEl.className = msg.from === JSON.parse(sessionStorage.getItem('user') || '{}').username ? 'message sent' : 'message received';
-      msgEl.textContent = msg.text;
-      chatMessages.appendChild(msgEl);
-    });
-
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-    contactsList.classList.add('hidden');
-    chatArea.classList.remove('hidden');
-  } catch (error) {
-    setStatus(error.message);
+async function openDmChat(username) {
+  currentChatType = 'dm';
+  currentGroupId = null;
+  currentChat = normalizeUsername(username);
+  const data = await request(`/api/chat/dm/${encodeURIComponent(currentChat)}`);
+  renderChatMessages(data.messages);
+  if (chatHeader) {
+    chatHeader.innerHTML = `<strong>@${data.withUser}</strong> <button type="button" class="btn-sm btn-primary" id="chat-profile-btn">Профиль</button>`;
+    document.querySelector('#chat-profile-btn')?.addEventListener('click', () => openUserProfile(data.withUser));
   }
+  contactsList.classList.add('hidden');
+  chatArea.classList.remove('hidden');
+}
+
+async function openGroupChat(groupId, title) {
+  currentChatType = 'group';
+  currentGroupId = groupId;
+  currentChat = groupId;
+  const data = await request(`/api/chat/group/${encodeURIComponent(groupId)}`);
+  renderChatMessages(data.messages, true);
+  if (chatHeader) {
+    chatHeader.innerHTML = `<strong>${title || data.group?.title || 'Чат'}</strong>`;
+  }
+  contactsList.classList.add('hidden');
+  chatArea.classList.remove('hidden');
+}
+
+function renderChatMessages(messages, isGroup = false) {
+  chatMessages.innerHTML = '';
+  messages.forEach(msg => {
+    const msgEl = document.createElement('div');
+    const mine = msg.from === currentUser;
+    msgEl.className = `message ${mine ? 'sent' : 'received'}`;
+    if (isGroup && !mine) {
+      msgEl.innerHTML = `<small>@${msg.from}</small><br>${escapeHtml(msg.text)}`;
+    } else {
+      msgEl.textContent = msg.text;
+    }
+    chatMessages.appendChild(msgEl);
+  });
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
 }
 
 async function sendMessage() {
   try {
     if (!currentChat || !messageText.value.trim()) return;
 
+    const body = currentChatType === 'group'
+      ? { groupId: currentGroupId, text: messageText.value }
+      : { to: currentChat, text: messageText.value };
+
     await request('/api/messages/send', {
       method: 'POST',
-      body: JSON.stringify({
-        to: currentChat,
-        text: messageText.value
-      })
+      body: JSON.stringify(body)
     });
 
     messageText.value = '';
-    openChat(currentChat);
+    if (currentChatType === 'group') {
+      await openGroupChat(currentGroupId);
+    } else {
+      await openDmChat(currentChat);
+    }
+    playMessageSound();
   } catch (error) {
     setStatus(error.message);
   }
 }
 
+async function openUserProfile(username) {
+  try {
+    const data = await request(`/api/users/${encodeURIComponent(username)}/profile`);
+    userProfileContent.innerHTML = `
+      <div class="user-profile-view">
+        <div style="font-size:3rem">${data.avatar || '👤'}</div>
+        <div class="handle-badge">@${data.username}</div>
+        <p>${data.profileVisible === false ? t('profile_hidden') : data.bio}</p>
+        ${data.profileVisible !== false ? `
+          <div class="profile-meta">
+            <div><strong>${data.posts ?? 0}</strong> ${t('posts')}</div>
+            <div><strong>${data.followers ?? 0}</strong> ${t('followers')}</div>
+            <div><strong>${data.following ?? 0}</strong> ${t('following_count')}</div>
+          </div>
+        ` : ''}
+        <div class="profile-actions">
+          ${data.username !== currentUser ? `
+            <button type="button" class="btn-primary" id="modal-follow-btn">${data.isFollowing ? t('following') : t('follow')}</button>
+          ` : ''}
+          ${data.canMessage ? `<button type="button" class="btn-primary" id="modal-chat-btn">${t('write_message')}</button>` : ''}
+        </div>
+      </div>
+    `;
+    document.querySelector('#modal-follow-btn')?.addEventListener('click', async (e) => {
+      await followUser(data.username, e.target);
+      openUserProfile(data.username);
+    });
+    document.querySelector('#modal-chat-btn')?.addEventListener('click', () => {
+      userProfileModal.classList.add('hidden');
+      showSection('messages');
+      startDmChat(data.username);
+    });
+    userProfileModal.classList.remove('hidden');
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+function closeUserProfileModal() {
+  userProfileModal?.classList.add('hidden');
+}
+
+async function saveSettings(partial) {
+  appSettings = {
+    notifications: { enabled: true, sound: true, messagePreview: true, posts: true, ...appSettings?.notifications },
+    privacy: { profileVisible: true, allowMessages: 'everyone', showLastSeen: true, ...appSettings?.privacy },
+    language: window.appLang,
+    theme: document.body.classList.contains('theme-light') ? 'light' : 'dark',
+    ...appSettings,
+    ...partial,
+    notifications: { ...appSettings?.notifications, ...partial?.notifications },
+    privacy: { ...appSettings?.privacy, ...partial?.privacy }
+  };
+  const result = await request('/api/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ settings: appSettings })
+  });
+  appSettings = result.settings;
+  applyTheme(appSettings.theme);
+  applyLanguage(appSettings.language);
+  localStorage.setItem('dio_theme', appSettings.theme);
+  setStatus(t('settings_saved'));
+}
+
+function renderSettingsUI() {
+  if (!settingsPanels) return;
+  const s = appSettings || {
+    notifications: { enabled: true, sound: true, messagePreview: true, posts: true },
+    privacy: { profileVisible: true, allowMessages: 'everyone', showLastSeen: true },
+    language: window.appLang,
+    theme: 'dark'
+  };
+
+  settingsPanels.innerHTML = `
+    <div class="settings-panel" data-panel="notifications">
+      <div class="settings-group">
+        ${settingsToggleRow('notif_enabled', 'set-notif-enabled', s.notifications.enabled)}
+        ${settingsToggleRow('notif_sound', 'set-notif-sound', s.notifications.sound)}
+        ${settingsToggleRow('notif_preview', 'set-notif-preview', s.notifications.messagePreview)}
+        ${settingsToggleRow('notif_posts', 'set-notif-posts', s.notifications.posts)}
+      </div>
+    </div>
+    <div class="settings-panel hidden" data-panel="privacy">
+      <div class="settings-group">
+        ${settingsToggleRow('privacy_profile', 'set-privacy-profile', s.privacy.profileVisible)}
+        <div class="settings-row">
+          <label for="set-privacy-messages">${t('privacy_messages')}</label>
+          <select id="set-privacy-messages">
+            <option value="everyone" ${s.privacy.allowMessages === 'everyone' ? 'selected' : ''}>${t('privacy_everyone')}</option>
+            <option value="followers" ${s.privacy.allowMessages === 'followers' ? 'selected' : ''}>${t('privacy_followers')}</option>
+            <option value="nobody" ${s.privacy.allowMessages === 'nobody' ? 'selected' : ''}>${t('privacy_nobody')}</option>
+          </select>
+        </div>
+        ${settingsToggleRow('privacy_lastseen', 'set-privacy-lastseen', s.privacy.showLastSeen)}
+      </div>
+    </div>
+    <div class="settings-panel hidden" data-panel="data">
+      <div class="settings-group">
+        <p class="settings-hint" id="account-stats-text">${t('data_stats')}...</p>
+        <button type="button" class="btn-primary" id="btn-clear-local">${t('data_clear')}</button>
+        <p class="settings-hint">${t('data_clear_hint')}</p>
+      </div>
+    </div>
+    <div class="settings-panel hidden" data-panel="appearance">
+      <div class="settings-group">
+        ${settingsToggleRow('theme_dark', 'set-theme-dark', s.theme !== 'light')}
+        <div class="settings-row">
+          <label for="set-language">${t('language')}</label>
+          <select id="set-language">
+            <option value="ru" ${s.language === 'ru' ? 'selected' : ''}>Русский</option>
+            <option value="en" ${s.language === 'en' ? 'selected' : ''}>English</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="settings-panel hidden" data-panel="account">
+      <div class="settings-group">
+        <label for="set-username">${t('username_label')}</label>
+        <input id="set-username" type="text" value="${currentUser || ''}" maxlength="32" autocomplete="off" spellcheck="false">
+        <p class="settings-hint">${t('username_hint')}</p>
+        <label for="set-bio">Bio</label>
+        <textarea id="set-bio" rows="3" maxlength="200"></textarea>
+        <button type="button" class="btn-primary" id="btn-save-account">${t('save')}</button>
+      </div>
+    </div>
+  `;
+
+  bindSettingsToggles();
+  loadAccountStats();
+  request('/api/profile').then(p => {
+    const bioEl = document.querySelector('#set-bio');
+    if (bioEl) bioEl.value = p.bio || '';
+  }).catch(() => {});
+
+  document.querySelector('#btn-clear-local')?.addEventListener('click', () => {
+    localStorage.removeItem('dio_theme');
+    localStorage.removeItem('dio_lang');
+    setStatus('OK');
+  });
+
+  document.querySelector('#set-privacy-messages')?.addEventListener('change', (e) => {
+    saveSettings({ privacy: { allowMessages: e.target.value } });
+  });
+
+  document.querySelector('#set-language')?.addEventListener('change', (e) => {
+    saveSettings({ language: e.target.value });
+  });
+
+  document.querySelector('#set-theme-dark')?.addEventListener('change', (e) => {
+    const theme = e.target.checked ? 'dark' : 'light';
+    applyTheme(theme);
+    saveSettings({ theme });
+  });
+
+  document.querySelector('#btn-save-account')?.addEventListener('click', async () => {
+    const username = normalizeUsername(document.querySelector('#set-username')?.value);
+    const bio = document.querySelector('#set-bio')?.value || '';
+    if (!USERNAME_REGEX.test(username)) {
+      setStatus(t('username_hint'));
+      return;
+    }
+    try {
+      const result = await request('/api/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ username, bio })
+      });
+      currentUser = result.username;
+      setStatus(result.message);
+      loadProfile();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+}
+
+function settingsToggleRow(i18nKey, id, checked) {
+  return `
+    <div class="settings-row">
+      <label for="${id}">${t(i18nKey)}</label>
+      <label class="toggle">
+        <input type="checkbox" id="${id}" ${checked ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  `;
+}
+
+function bindSettingsToggles() {
+  const map = [
+    ['set-notif-enabled', 'notifications', 'enabled'],
+    ['set-notif-sound', 'notifications', 'sound'],
+    ['set-notif-preview', 'notifications', 'messagePreview'],
+    ['set-notif-posts', 'notifications', 'posts'],
+    ['set-privacy-profile', 'privacy', 'profileVisible'],
+    ['set-privacy-lastseen', 'privacy', 'showLastSeen']
+  ];
+  map.forEach(([id, section, key]) => {
+    document.querySelector(`#${id}`)?.addEventListener('change', (e) => {
+      saveSettings({ [section]: { [key]: e.target.checked } });
+    });
+  });
+}
+
+async function loadAccountStats() {
+  try {
+    const stats = await request('/api/account/stats');
+    const el = document.querySelector('#account-stats-text');
+    if (el) {
+      el.textContent = `${t('data_stats')}: ${stats.messagesCount} сообщ., ${stats.postsCount} ${t('posts')}.`;
+    }
+  } catch (_) { /* ignore */ }
+}
+
 async function loadProfile() {
   try {
     const data = await request('/api/profile');
+    appSettings = data.settings || appSettings;
     profileContainer.innerHTML = `
       <div class="profile-card">
         <div class="header">
           <div>
             <div style="font-size: 3rem; margin-bottom: 12px;">${data.avatar}</div>
-            <strong>@${data.username}</strong>
+            <strong class="handle-badge">@${data.username}</strong>
             <p>${data.bio}</p>
           </div>
         </div>
         <div class="profile-meta">
-          <div><strong>${data.posts}</strong> постов</div>
-          <div><strong>${data.followers}</strong> подписчиков</div>
-          <div><strong>${data.following}</strong> подписок</div>
+          <div><strong>${data.posts}</strong> ${t('posts')}</div>
+          <div><strong>${data.followers}</strong> ${t('followers')}</div>
+          <div><strong>${data.following}</strong> ${t('following_count')}</div>
         </div>
-        <div class="status">Добро пожаловать в DIO! 🔥</div>
+        <button type="button" class="btn-primary" id="btn-open-settings">${t('nav_settings')}</button>
+        <div class="status">DIO 🔥</div>
       </div>
     `;
+    document.querySelector('#btn-open-settings')?.addEventListener('click', () => showSection('settings'));
   } catch (error) {
     setStatus(error.message);
   }
@@ -518,10 +878,60 @@ navFeed?.addEventListener('click', () => showSection('feed'));
 navMessages?.addEventListener('click', () => showSection('messages'));
 navSearch?.addEventListener('click', () => { showSection('search'); loadSearchPeople(); });
 navProfile?.addEventListener('click', () => showSection('profile'));
+navSettings?.addEventListener('click', () => showSection('settings'));
+
+document.querySelector('#settings-nav')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.settings-nav-btn');
+  if (!btn) return;
+  const panel = btn.dataset.settingsPanel;
+  document.querySelectorAll('.settings-nav-btn').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('.settings-panel').forEach(p => {
+    p.classList.toggle('hidden', p.dataset.panel !== panel);
+  });
+});
+
+document.querySelectorAll('[data-close-modal]').forEach(el => {
+  el.addEventListener('click', closeUserProfileModal);
+});
 backToContacts?.addEventListener('click', () => {
   currentChat = null;
+  currentGroupId = null;
   chatArea.classList.add('hidden');
   contactsList.classList.remove('hidden');
+  loadContacts();
+});
+
+btnSearchExact?.addEventListener('click', () => lookupExactUsername(searchUsersInput?.value));
+searchUsersInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    lookupExactUsername(searchUsersInput.value);
+  }
+});
+
+document.querySelector('#btn-new-group')?.addEventListener('click', () => {
+  groupModal?.classList.remove('hidden');
+});
+document.querySelectorAll('[data-close-group-modal]').forEach(el => {
+  el.addEventListener('click', () => groupModal?.classList.add('hidden'));
+});
+document.querySelector('#btn-group-create')?.addEventListener('click', async () => {
+  try {
+    const title = document.querySelector('#group-title')?.value;
+    const type = document.querySelector('#group-type')?.value;
+    const slug = document.querySelector('#group-slug')?.value;
+    const result = await request('/api/groups/create', {
+      method: 'POST',
+      body: JSON.stringify({ title, type, slug: slug || undefined })
+    });
+    groupModal?.classList.add('hidden');
+    setStatus('Группа создана');
+    showSection('messages');
+    await openGroupChat(result.group.id, result.group.title);
+    loadContacts();
+  } catch (error) {
+    setStatus(error.message);
+  }
 });
 window.addEventListener('scroll', () => {
   if (!feedHasMore || feedLoading) return;
@@ -532,8 +942,13 @@ window.addEventListener('scroll', () => {
 });
 searchUsersInput?.addEventListener('input', (e) => {
   clearTimeout(searchTimeout);
+  const value = normalizeUsername(e.target.value);
+  if (e.target.value !== value) e.target.value = value.replace(/[^a-z0-9_]/g, '');
   searchTimeout = setTimeout(() => searchUsers(e.target.value), 300);
 });
+
+applyTheme(localStorage.getItem('dio_theme') || 'dark');
+applyLanguage(window.appLang);
 
 showSection('feed');
 loadUser();

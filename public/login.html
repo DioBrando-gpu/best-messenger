@@ -15,8 +15,9 @@
       </div>
 
       <div class="form-item">
-        <label for="username">Логин</label>
-        <input id="username" type="text" placeholder="Введите логин" autocomplete="username">
+        <label for="username">@username</label>
+        <input id="username" type="text" placeholder="my_name" autocomplete="username" maxlength="32" spellcheck="false">
+        <small style="color: #a5b4fc; font-size: 0.85rem;">Только a-z, 0-9 и _, минимум 5 символов</small>
       </div>
       <div class="form-item">
         <label for="password">Пароль</label>
@@ -57,12 +58,16 @@
       return json;
     }
 
+    const USERNAME_REGEX = /^[a-z0-9_]{5,32}$/;
+
     async function submit(path) {
       try {
-        const body = {
-          username: usernameInput.value.trim(),
-          password: passwordInput.value.trim()
-        };
+        const username = usernameInput.value.trim().toLowerCase();
+        const password = passwordInput.value.trim();
+        if (path === '/api/register' && !USERNAME_REGEX.test(username)) {
+          throw new Error('Username: только a-z, 0-9 и _, минимум 5 символов');
+        }
+        const body = { username, password };
         const result = await request(path, body);
         showMessage(result.message, false);
         setTimeout(() => window.location.href = '/', 600);
