@@ -3,14 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Вход / Регистрация</title>
+  <title>DIO - Вход</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
     <main class="card form-card">
-      <h1>TotemMask</h1>
-      <p>Локальный мини-мессенджер с регистрацией и простой лентой.</p>
+      <div class="form-header">
+        <h1>🔥 DIO</h1>
+        <p>Современный мессенджер. Общайся со своей аудиторией.</p>
+      </div>
 
       <div class="form-item">
         <label for="username">Логин</label>
@@ -71,6 +73,11 @@
 
     btnLogin.addEventListener('click', () => submit('/api/login'));
     btnRegister.addEventListener('click', () => submit('/api/register'));
+    
+    // Вход по Enter
+    passwordInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') submit('/api/login');
+    });
   </script>
 </body>
 </html>

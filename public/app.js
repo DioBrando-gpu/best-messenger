@@ -1,14 +1,23 @@
 const apiStatus = document.querySelector('#api-status');
 const feedContainer = document.querySelector('#feed');
-const messagesContainer = document.querySelector('#messages');
+const contactsList = document.querySelector('#contacts-list');
+const chatArea = document.querySelector('#chat-area');
+const chatMessages = document.querySelector('#chat-messages');
 const profileContainer = document.querySelector('#profile');
 const pageTitle = document.querySelector('#page-title');
-const refreshButton = document.querySelector('#refresh-feed');
 const navFeed = document.querySelector('#nav-feed');
 const navMessages = document.querySelector('#nav-messages');
 const navProfile = document.querySelector('#nav-profile');
 const btnLogout = document.querySelector('#btn-logout');
 const pageSections = document.querySelectorAll('.page-section');
+const postText = document.querySelector('#post-text');
+const postImage = document.querySelector('#post-image');
+const btnPostCreate = document.querySelector('#btn-post-create');
+const messageText = document.querySelector('#message-text');
+const btnSendMessage = document.querySelector('#btn-send-message');
+const backToContacts = document.querySelector('#back-to-contacts');
+
+let currentChat = null;
 
 function showSection(section) {
   pageSections.forEach(sec => sec.classList.toggle('hidden', sec.dataset.section !== section));
@@ -16,6 +25,13 @@ function showSection(section) {
   navFeed.classList.toggle('active', section === 'feed');
   navMessages.classList.toggle('active', section === 'messages');
   navProfile.classList.toggle('active', section === 'profile');
+  
+  if (section === 'messages') {
+    loadContacts();
+    currentChat = null;
+    chatArea.classList.add('hidden');
+    contactsList.classList.remove('hidden');
+  }
 }
 
 function setStatus(text) {
@@ -39,9 +55,8 @@ async function loadUser() {
       window.location.href = '/login.html';
       return;
     }
-    setStatus(`Привет, ${user.username}! Добро пожаловать.`);
+    setStatus(`Добро пожаловать, ${user.username}! 🔥`);
     loadFeed();
-    loadMessages();
     loadProfile();
   } catch (error) {
     console.error(error);
@@ -53,25 +68,27 @@ function createPost(post) {
   const card = document.createElement('article');
   card.className = 'post-card';
   card.innerHTML = `
-    <img src="${post.image}" alt="Пост ${post.id}">
     <div class="post-body">
       <div class="post-meta">
-        <strong>@${post.username}</strong>
-        <small>${post.time}</small>
+        <strong>${post.avatar} @${post.author}</strong>
+        <small>${new Date(post.timestamp).toLocaleString('ru-RU')}</small>
       </div>
-      <p>${post.description}</p>
+      <p>${post.text}</p>
+      ${post.image ? `<img src="${post.image}" alt="Пост" style="width:100%; border-radius: 12px; margin: 12px 0;">` : ''}
       <div class="post-footer">
-        <span class="status">${post.likes} ❤</span>
+        <span class="status">${post.likes.length} ❤</span>
         <button class="like-btn" data-id="${post.id}">Лайк</button>
+        <button class="delete-btn" data-id="${post.id}">🗑️</button>
       </div>
     </div>
   `;
-  const likeBtn = card.querySelector('button');
-  likeBtn.addEventListener('click', () => {
-    post.likes += 1;
-    card.querySelector('.status').textContent = `${post.likes} ❤`;
-    likeBtn.textContent = '🧡 Нравится';
-  });
+  
+  const likeBtn = card.querySelector('.like-btn');
+  const deleteBtn = card.querySelector('.delete-btn');
+  
+  likeBtn.addEventListener('click', () => likePost(post.id, card));
+  deleteBtn.addEventListener('click', () => deletePost(post.id, card));
+  
   return card;
 }
 
@@ -85,24 +102,115 @@ async function loadFeed() {
   }
 }
 
-function createMessage(item) {
-  const row = document.createElement('div');
-  row.className = 'message-row';
-  row.innerHTML = `
-    <div>
-      <strong>${item.contact}</strong>
-      <small>${item.text}</small>
-    </div>
-    <span>${item.unread ? '●' : ''}</span>
-  `;
-  return row;
+async function likePost(postId, element) {
+  try {
+    const data = await request(`/api/posts/${postId}/like`, { method: 'POST' });
+    element.querySelector('.status').textContent = `${data.likes.length} ❤`;
+  } catch (error) {
+    setStatus(error.message);
+  }
 }
 
-async function loadMessages() {
+async function deletePost(postId, element) {
+  if (!confirm('Удалить пост?')) return;
+  try {
+    await request(`/api/posts/${postId}`, { method: 'DELETE' });
+    element.remove();
+    loadFeed();
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function createPost() {
+  try {
+    if (!postText.value.trim()) {
+      setStatus('Напишите текст поста');
+      return;
+    }
+
+    const data = await request('/api/posts/create', {
+      method: 'POST',
+      body: JSON.stringify({
+        text: postText.value,
+        image: postImage.value || null
+      })
+    });
+
+    postText.value = '';
+    postImage.value = '';
+    loadFeed();
+    setStatus('Пост опубликован!');
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function loadContacts() {
   try {
     const data = await request('/api/messages');
-    messagesContainer.innerHTML = '';
-    data.messages.forEach(item => messagesContainer.appendChild(createMessage(item)));
+    contactsList.innerHTML = '';
+    if (!data.contacts || data.contacts.length === 0) {
+      contactsList.innerHTML = '<p style="color: #a5b4fc; padding: 20px;">Нет сообщений. Начните общение!</p>';
+      return;
+    }
+
+    data.contacts.forEach(contact => {
+      const item = document.createElement('div');
+      item.className = 'contact-item';
+      item.innerHTML = `
+        <div class="contact-info">
+          <div class="contact-avatar">👤</div>
+          <div class="contact-text">
+            <strong>${contact.name}</strong>
+            <small>${contact.lastMessage?.substring(0, 40) || 'Нет сообщений'}</small>
+          </div>
+          ${contact.unread ? '<div class="contact-unread"></div>' : ''}
+        </div>
+      `;
+      item.addEventListener('click', () => openChat(contact.name));
+      contactsList.appendChild(item);
+    });
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function openChat(username) {
+  try {
+    currentChat = username;
+    const data = await request(`/api/chat/${username}`);
+    chatMessages.innerHTML = '';
+    
+    data.messages.forEach(msg => {
+      const msgEl = document.createElement('div');
+      msgEl.className = msg.from === JSON.parse(sessionStorage.getItem('user') || '{}').username ? 'message sent' : 'message received';
+      msgEl.textContent = msg.text;
+      chatMessages.appendChild(msgEl);
+    });
+
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    contactsList.classList.add('hidden');
+    chatArea.classList.remove('hidden');
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function sendMessage() {
+  try {
+    if (!currentChat || !messageText.value.trim()) return;
+
+    await request('/api/messages/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        to: currentChat,
+        text: messageText.value
+      })
+    });
+
+    messageText.value = '';
+    openChat(currentChat);
   } catch (error) {
     setStatus(error.message);
   }
@@ -115,31 +223,21 @@ async function loadProfile() {
       <div class="profile-card">
         <div class="header">
           <div>
+            <div style="font-size: 3rem; margin-bottom: 12px;">${data.avatar}</div>
             <strong>@${data.username}</strong>
             <p>${data.bio}</p>
           </div>
-          <button class="btn-primary" id="theme-toggle">Тема</button>
         </div>
         <div class="profile-meta">
-          <div><strong>${data.posts}</strong> посты</div>
-          <div><strong>${data.followers}</strong> подписчики</div>
-          <div><strong>${data.following}</strong> подписки</div>
+          <div><strong>${data.posts}</strong> постов</div>
+          <div><strong>${data.followers}</strong> подписчиков</div>
+          <div><strong>${data.following}</strong> подписок</div>
         </div>
-        <div class="status">Локальный тестовый профиль</div>
+        <div class="status">Добро пожаловать в DIO! 🔥</div>
       </div>
     `;
-    document.querySelector('#theme-toggle').addEventListener('click', toggleTheme);
   } catch (error) {
     setStatus(error.message);
-  }
-}
-
-function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme');
-  if (current === 'light') {
-    document.documentElement.removeAttribute('data-theme');
-  } else {
-    document.documentElement.setAttribute('data-theme', 'light');
   }
 }
 
@@ -152,11 +250,18 @@ async function logout() {
   }
 }
 
-refreshButton?.addEventListener('click', loadFeed);
+btnPostCreate?.addEventListener('click', createPost);
+btnSendMessage?.addEventListener('click', sendMessage);
+messageText?.addEventListener('keypress', (e) => e.key === 'Enter' && sendMessage());
 btnLogout?.addEventListener('click', logout);
 navFeed?.addEventListener('click', () => showSection('feed'));
 navMessages?.addEventListener('click', () => showSection('messages'));
 navProfile?.addEventListener('click', () => showSection('profile'));
+backToContacts?.addEventListener('click', () => {
+  currentChat = null;
+  chatArea.classList.add('hidden');
+  contactsList.classList.remove('hidden');
+});
 
 showSection('feed');
 loadUser();

@@ -1,7 +1,7 @@
 {
-  "name": "totem-mask-mini-messenger",
-  "version": "1.0.0",
-  "description": "Минималистичный локальный сайт с регистрацией, входом и простой лентой.",
+  "name": "dio-messenger",
+  "version": "2.0.0",
+  "description": "DIO - современный мессенджер с лентой, чатом и постами.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

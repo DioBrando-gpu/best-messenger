@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TotemMask Mini</title>
+  <title>DIO - Messenger</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body data-app="true">
   <div class="container">
     <header class="header card">
-      <div class="logo"><span></span>TotemMask</div>
+      <div class="logo"><span></span>DIO</div>
       <nav class="navbar">
         <button id="nav-feed" class="active">Лента</button>
-        <button id="nav-messages">Сообщения</button>
-        <button id="nav-profile">Профиль</button>
+        <button id="nav-messages">💬</button>
+        <button id="nav-profile">👤</button>
       </nav>
       <button id="btn-logout" class="btn-primary">Выйти</button>
     </header>
@@ -21,19 +21,33 @@
     <section class="hero card section">
       <div class="section-title">
         <h1 id="page-title">Лента</h1>
-        <button class="btn-primary" id="refresh-feed">Обновить</button>
       </div>
       <p id="api-status">Загрузка...</p>
     </section>
 
     <div class="grid grid-3">
       <main class="card section page-section" data-section="feed">
+        <div id="new-post-form" class="new-post-card">
+          <input id="post-text" type="text" placeholder="Что на уме?" maxlength="300">
+          <div class="post-form-actions">
+            <input id="post-image" type="text" placeholder="URL фото (опционально)">
+            <button id="btn-post-create" class="btn-primary">Опубликовать</button>
+          </div>
+        </div>
         <div id="feed" class="grid"></div>
       </main>
 
       <aside class="card section page-section hidden" data-section="messages">
         <div class="section-title"><h2>Сообщения</h2></div>
-        <div id="messages" class="message-card"></div>
+        <div id="contacts-list" class="contacts-list"></div>
+        <div id="chat-area" class="chat-area hidden">
+          <button id="back-to-contacts" class="btn-back">← Назад</button>
+          <div id="chat-messages" class="chat-messages"></div>
+          <div class="chat-input">
+            <input id="message-text" type="text" placeholder="Написать сообщение...">
+            <button id="btn-send-message" class="btn-primary">Отправить</button>
+          </div>
+        </div>
       </aside>
 
       <aside class="card section page-section hidden" data-section="profile">

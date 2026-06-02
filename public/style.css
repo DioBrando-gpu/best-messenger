@@ -195,18 +195,161 @@ button {
   color: #a5b4fc;
 }
 
-.post-card {
-  overflow: hidden;
-  border-radius: 26px;
+.new-post-card {
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 20px;
+  margin-bottom: 24px;
+  display: grid;
+  gap: 12px;
 }
 
-.post-card img {
+.new-post-card input {
   width: 100%;
-  display: block;
+  padding: 14px 16px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 16px;
+  background: rgba(255,255,255,.04);
+  color: #eef2ff;
+  font-size: .95rem;
 }
 
-.post-body {
-  padding: 18px;
+.post-form-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.post-form-actions input {
+  flex: 1;
+}
+
+.post-form-actions button {
+  flex: 0 0 auto;
+}
+
+.contacts-list {
+  display: grid;
+  gap: 8px;
+}
+
+.contact-item {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255,255,255,.04);
+  cursor: pointer;
+  transition: background .2s ease;
+}
+
+.contact-item:hover {
+  background: rgba(255,255,255,.08);
+}
+
+.contact-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.contact-avatar {
+  font-size: 1.4rem;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.contact-text strong {
+  display: block;
+  font-size: .95rem;
+}
+
+.contact-text small {
+  color: #a5b4fc;
+  font-size: .85rem;
+}
+
+.contact-unread {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  margin-left: auto;
+}
+
+.chat-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+
+.btn-back {
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.07);
+  color: #fff;
+  align-self: flex-start;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.message {
+  padding: 12px 14px;
+  border-radius: 16px;
+  max-width: 80%;
+  word-wrap: break-word;
+  font-size: .95rem;
+}
+
+.message.sent {
+  background: linear-gradient(135deg, #8b5cf6, #4f46e5);
+  color: #fff;
+  margin-left: auto;
+}
+
+.message.received {
+  background: rgba(255,255,255,.08);
+  color: #f8fafc;
+}
+
+.chat-input {
+  display: flex;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 999px;
+  background: rgba(255,255,255,.04);
+  color: #eef2ff;
+}
+
+.form-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.form-header h1 {
+  margin: 0 0 8px 0;
+  font-size: 2.5rem;
+}
+
+.form-header p {
+  margin: 0;
+  color: #a5b4fc;
 }
 
 .post-meta {
