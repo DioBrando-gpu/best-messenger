@@ -215,6 +215,26 @@ button {
   font-size: .95rem;
 }
 
+.file-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: rgba(139,92,246,.18);
+  color: #fff;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+.file-upload span {
+  font-size: .95rem;
+}
+
+.file-upload input {
+  display: none;
+}
+
 .post-form-actions {
   display: flex;
   gap: 12px;
@@ -369,6 +389,43 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.post-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.post-actions button {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  color: #fff;
+}
+
+.favorite-active {
+  color: #f97316;
+}
+
+.post-comments {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.comment-item {
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.05);
+}
+
+.comment-item small {
+  display: block;
+  color: #a5b4fc;
+  margin-top: 4px;
 }
 
 .search-users {

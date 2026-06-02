@@ -164,16 +164,27 @@ app.get('/api/user', (req, res) => {
 });
 
 app.get('/api/feed', requireAuth, (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 6;
+  const random = req.query.random === 'true';
   const posts = readPosts();
   const users = readUsers();
   const enrichedPosts = posts.map(post => {
     const user = users.find(u => u.username === post.author);
     return {
       ...post,
-      avatar: user?.avatar || '👤'
+      avatar: user?.avatar || '👤',
+      isFavorite: post.favorites?.includes(req.session.username),
+      isFollowing: user?.followers?.includes(req.session.username)
     };
-  }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  res.json({ posts: enrichedPosts });
+  });
+
+  const sortedPosts = random
+    ? enrichedPosts.sort(() => 0.5 - Math.random())
+    : enrichedPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const pagedPosts = sortedPosts.slice((page - 1) * limit, page * limit);
+  const hasMore = page * limit < sortedPosts.length;
+  res.json({ posts: pagedPosts, hasMore });
 });
 
 app.post('/api/posts/create', requireAuth, (req, res) => {
@@ -190,7 +201,12 @@ app.post('/api/posts/create', requireAuth, (req, res) => {
     image: image || null,
     timestamp: new Date().toISOString(),
     likes: [],
-    comments: []
+    favorites: [],
+    comments: [],
+    shares: 0,
+    reposts: 0,
+    originalAuthor: null,
+    originalPostId: null
   };
 
   posts.push(newPost);
@@ -214,6 +230,116 @@ app.post('/api/posts/:id/like', requireAuth, (req, res) => {
 
   writePosts(posts);
   res.json({ message: 'Лайк обновлен', likes: post.likes });
+});
+
+app.post('/api/posts/:id/favorite', requireAuth, (req, res) => {
+  const posts = readPosts();
+  const post = posts.find(p => p.id === parseInt(req.params.id));
+  if (!post) {
+    return res.status(404).json({ message: 'Пост не найден' });
+  }
+
+  post.favorites = post.favorites || [];
+  const idx = post.favorites.indexOf(req.session.username);
+  if (idx > -1) {
+    post.favorites.splice(idx, 1);
+  } else {
+    post.favorites.push(req.session.username);
+  }
+  writePosts(posts);
+  res.json({ message: 'Избранное обновлено', favorites: post.favorites });
+});
+
+app.post('/api/posts/:id/comment', requireAuth, (req, res) => {
+  const { text } = req.body;
+  if (!text || text.trim().length === 0) {
+    return res.status(400).json({ message: 'Комментарий не может быть пустым' });
+  }
+
+  const posts = readPosts();
+  const post = posts.find(p => p.id === parseInt(req.params.id));
+  if (!post) {
+    return res.status(404).json({ message: 'Пост не найден' });
+  }
+
+  post.comments = post.comments || [];
+  post.comments.push({
+    id: Date.now(),
+    author: req.session.username,
+    text: text.trim(),
+    timestamp: new Date().toISOString()
+  });
+  writePosts(posts);
+  res.json({ message: 'Комментарий добавлен', comments: post.comments });
+});
+
+app.post('/api/posts/:id/share', requireAuth, (req, res) => {
+  const posts = readPosts();
+  const post = posts.find(p => p.id === parseInt(req.params.id));
+  if (!post) {
+    return res.status(404).json({ message: 'Пост не найден' });
+  }
+
+  post.shares = (post.shares || 0) + 1;
+  writePosts(posts);
+  res.json({ message: 'Пост поделился', shares: post.shares });
+});
+
+app.post('/api/posts/:id/repost', requireAuth, (req, res) => {
+  const posts = readPosts();
+  const post = posts.find(p => p.id === parseInt(req.params.id));
+  if (!post) {
+    return res.status(404).json({ message: 'Пост не найден' });
+  }
+
+  const allPosts = readPosts();
+  post.reposts = (post.reposts || 0) + 1;
+  const repost = {
+    id: Date.now(),
+    author: req.session.username,
+    text: `Репост от @${post.author}: ${post.text}`,
+    image: post.image,
+    timestamp: new Date().toISOString(),
+    likes: [],
+    favorites: [],
+    comments: [],
+    shares: 0,
+    reposts: 0,
+    originalAuthor: post.author,
+    originalPostId: post.id
+  };
+  allPosts.push(repost);
+  writePosts(allPosts);
+  writePosts(posts);
+  res.json({ message: 'Репост создан', repost });
+});
+
+app.post('/api/users/:username/follow', requireAuth, (req, res) => {
+  const users = readUsers();
+  const target = users.find(u => u.username === req.params.username);
+  const me = users.find(u => u.username === req.session.username);
+  if (!target || !me) {
+    return res.status(404).json({ message: 'Пользователь не найден' });
+  }
+  if (target.username === me.username) {
+    return res.status(400).json({ message: 'Нельзя подписаться на себя' });
+  }
+
+  target.followers = target.followers || [];
+  me.following = me.following || [];
+  const idx = target.followers.indexOf(me.username);
+  if (idx > -1) {
+    target.followers.splice(idx, 1);
+    const followIdx = me.following.indexOf(target.username);
+    if (followIdx > -1) me.following.splice(followIdx, 1);
+    writeUsers(users);
+    return res.json({ message: 'Отписано', following: me.following.length, followers: target.followers.length });
+  }
+
+  target.followers.push(me.username);
+  me.following.push(target.username);
+  writeUsers(users);
+  res.json({ message: 'Подписано', following: me.following.length, followers: target.followers.length });
 });
 
 app.delete('/api/posts/:id', requireAuth, (req, res) => {
