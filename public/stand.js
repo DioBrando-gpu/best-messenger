@@ -1,15 +1,18 @@
 const standFeed = document.querySelector('#stand-feed');
-const standFile = document.querySelector('#stand-file');
-const standCaption = document.querySelector('#stand-caption');
-const btnStandUpload = document.querySelector('#btn-stand-upload');
-const navStand = document.querySelector('#nav-stand');
 const standFab = document.querySelector('#stand-fab');
-const standUploadModal = document.querySelector('#stand-upload-modal');
-const standFileLabelText = document.querySelector('#stand-file-label-text');
 
 let standPage = 1;
 let standHasMore = true;
 let standLoading = false;
+
+// Скрытый input для выбора видео
+const standFileInput = document.createElement('input');
+standFileInput.type = 'file';
+standFileInput.accept = 'video/*';
+standFileInput.style.display = 'none';
+document.body.appendChild(standFileInput);
+
+// ========== ЗАГРУЗКА ЛЕНТЫ ==========
 
 async function loadStandFeed(reset = false) {
   if (!standFeed || standLoading) return;
@@ -32,6 +35,8 @@ async function loadStandFeed(reset = false) {
     standLoading = false;
   }
 }
+
+// ========== РЕНДЕР СЛАЙДА (Reels/TikTok стиль) ==========
 
 function renderStandSlide(stand) {
   const slide = document.createElement('article');
@@ -64,6 +69,7 @@ function renderStandSlide(stand) {
   slide.querySelector('.repost-btn')?.addEventListener('click', () => standRepost(stand.id));
   slide.querySelector('.delete-stand-btn')?.addEventListener('click', () => standDelete(stand.id, slide));
 
+  // Автоплей при попадании в зону видимости
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
@@ -77,6 +83,8 @@ function renderStandSlide(stand) {
 
   return slide;
 }
+
+// ========== ДЕЙСТВИЯ ==========
 
 function toggleStandComments(stand, slide) {
   const block = slide.querySelector('.stand-comments');
@@ -118,7 +126,7 @@ async function standFavorite(id, slide) {
 async function standShare(id, slide) {
   const data = await request(`/api/stand/${id}/share`, { method: 'POST' });
   slide.querySelector('.share-btn span').textContent = data.shares;
-  setStatus('Ссылка скопирована в буфер (шаринг)');
+  setStatus('Ссылка скопирована в буфер');
   const url = `${location.origin}/?stand=${id}`;
   navigator.clipboard?.writeText(url).catch(() => {});
 }
@@ -135,6 +143,8 @@ async function standDelete(id, slide) {
   slide.remove();
 }
 
+// ========== БЕСКОНЕЧНЫЙ СКРОЛЛ ==========
+
 function initStandObserver() {
   if (!standFeed) return;
   standFeed.addEventListener('scroll', () => {
@@ -145,55 +155,41 @@ function initStandObserver() {
   }, { once: false });
 }
 
-function openStandUploadModal() {
-  standUploadModal?.classList.remove('hidden');
-}
+// ========== ЗАГРУЗКА ВИДЕО (через FAB) ==========
 
-function closeStandUploadModal() {
-  standUploadModal?.classList.add('hidden');
-}
-
-standFab?.addEventListener('click', openStandUploadModal);
-document.querySelectorAll('[data-close-stand-modal]').forEach(el => {
-  el.addEventListener('click', closeStandUploadModal);
+// При клике на FAB (+) — открываем галерею
+standFab?.addEventListener('click', () => {
+  standFileInput.click();
 });
 
-standFile?.addEventListener('change', () => {
-  const name = standFile.files?.[0]?.name;
-  if (standFileLabelText) {
-    standFileLabelText.textContent = name ? name : 'Выбрать видео';
-  }
-});
+// Когда видео выбрано — сразу загружаем
+standFileInput.addEventListener('change', async () => {
+  const file = standFileInput.files?.[0];
+  if (!file) return;
 
-async function publishStandVideo() {
-  if (!standFile?.files?.length) {
-    setStatus('Выберите видео');
-    return;
-  }
-  const file = standFile.files[0];
+  // Проверка размера до 25 МБ
   if (file.size > 25 * 1024 * 1024) {
     setStatus('Видео до 25 МБ');
+    standFileInput.value = '';
     return;
   }
-  const video = await readFileAsDataURL(file);
-  await request('/api/stand/create', {
-    method: 'POST',
-    body: JSON.stringify({ video, caption: standCaption?.value || '' })
-  });
-  standFile.value = '';
-  if (standCaption) standCaption.value = '';
-  if (standFileLabelText) standFileLabelText.textContent = 'Выбрать видео';
-  closeStandUploadModal();
-  loadStandFeed(true);
-  setStatus('Опубликовано в Stand');
-}
 
-btnStandUpload?.addEventListener('click', async () => {
+  setStatus('Загрузка видео...');
+
   try {
-    await publishStandVideo();
+    const videoData = await readFileAsDataURL(file);
+    await request('/api/stand/create', {
+      method: 'POST',
+      body: JSON.stringify({ video: videoData, caption: '' })
+    });
+    standFileInput.value = '';
+    loadStandFeed(true);
+    setStatus('Видео опубликовано в Stand!');
   } catch (error) {
     setStatus(error.message);
+    standFileInput.value = '';
   }
 });
 
+// Экспорт для app.js
 window.loadStandFeed = loadStandFeed;

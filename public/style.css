@@ -325,29 +325,6 @@ body.on-stand .stand-fab {
   display: flex;
 }
 
-.stand-upload-modal {
-  display: grid;
-  gap: 14px;
-}
-
-.stand-upload-modal h3 {
-  margin: 0 0 4px;
-}
-
-.stand-upload-modal input[type="text"] {
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--input-border);
-  background: var(--input-bg);
-  color: inherit;
-  width: 100%;
-}
-
-.stand-file-label {
-  width: 100%;
-  justify-content: center;
-}
-
 #group-modal .modal-card {
   display: grid;
   gap: 12px;
