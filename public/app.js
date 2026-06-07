@@ -324,30 +324,53 @@ async function repostPost(postId) {
   }
 }
 
+// Глобальное состояние предпросмотра медиа в форме поста
+let postPendingMedia = null; // { data, type, name }
+
+function updatePostMediaPreview() {
+  const preview = document.querySelector('#post-media-preview');
+  if (!preview) return;
+  if (postPendingMedia?.data) {
+    preview.classList.remove('hidden');
+    if (postPendingMedia.type === 'video') {
+      preview.innerHTML = `<video src="${postPendingMedia.data}" controls playsinline muted></video><button type="button" class="media-preview-remove" id="btn-post-media-remove" title="Убрать">×</button>`;
+    } else {
+      preview.innerHTML = `<img src="${postPendingMedia.data}" alt=""><button type="button" class="media-preview-remove" id="btn-post-media-remove" title="Убрать">×</button>`;
+    }
+    preview.querySelector('#btn-post-media-remove')?.addEventListener('click', () => {
+      postPendingMedia = null;
+      if (postFile) postFile.value = '';
+      updatePostMediaPreview();
+    });
+  } else {
+    preview.classList.add('hidden');
+    preview.innerHTML = '';
+  }
+}
+
 async function submitPost() {
   try {
-    if (!postText.value.trim()) {
-      setStatus('Напишите текст поста');
+    if (!postText.value.trim() && !postPendingMedia) {
+      setStatus('Напишите текст или добавьте фото/видео');
       return;
-    }
-
-    let imageData = null;
-    if (postFile?.files?.length > 0) {
-      const file = postFile.files[0];
-      imageData = await readFileAsDataURL(file);
     }
 
     const data = await request('/api/posts/create', {
       method: 'POST',
       body: JSON.stringify({
         text: postText.value,
-        image: imageData || postImage.value || null
+        image: postPendingMedia?.type === 'image' ? postPendingMedia.data : (postImage.value || null),
+        video: postPendingMedia?.type === 'video' ? postPendingMedia.data : null,
+        media: postPendingMedia?.data || null,
+        mediaType: postPendingMedia?.type || null
       })
     });
 
     postText.value = '';
     postImage.value = '';
     if (postFile) postFile.value = '';
+    postPendingMedia = null;
+    updatePostMediaPreview();
     feedPage = 1;
     feedHasMore = true;
     loadFeed();
@@ -378,6 +401,77 @@ function initEmojiPickers() {
     input: messageText
   });
 }
+
+// Обработчик выбора фото/видео в форме поста — показываем предпросмотр
+postFile?.addEventListener('change', async () => {
+  const file = postFile.files?.[0];
+  if (!file) return;
+  setStatus('Обработка...');
+  const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+  try {
+    const data = await compressMedia(file, mediaType);
+    postPendingMedia = { data, type: mediaType, name: file.name };
+    updatePostMediaPreview();
+    setStatus(`📎 ${file.name} прикреплён. Можно публиковать.`);
+  } catch (e) {
+    setStatus('Ошибка обработки файла: ' + e.message);
+    if (postFile) postFile.value = '';
+  }
+});
+
+// ========== Универсальный предпросмотр медиа (модалка) ==========
+let mediaPreviewResolver = null;
+
+function openMediaPreviewModal({ title, data, type, withCaption }) {
+  const modal = document.querySelector('#media-preview-modal');
+  const content = document.querySelector('#media-preview-content');
+  const captionEl = document.querySelector('#media-preview-caption');
+  const titleEl = document.querySelector('#media-preview-title');
+  if (!modal || !content) return Promise.resolve(null);
+
+  titleEl.textContent = title || 'Предпросмотр';
+  content.innerHTML = '';
+  if (type === 'image') {
+    content.innerHTML = `<img src="${data}" alt="">`;
+  } else if (type === 'video') {
+    content.innerHTML = `<video src="${data}" autoplay loop muted playsinline></video>`;
+  } else if (type === 'audio') {
+    content.innerHTML = `<audio src="${data}" controls autoplay></audio>`;
+  }
+
+  if (withCaption) {
+    captionEl.classList.remove('hidden');
+    captionEl.value = '';
+  } else {
+    captionEl.classList.add('hidden');
+    captionEl.value = '';
+  }
+
+  modal.classList.remove('hidden');
+
+  return new Promise((resolve) => {
+    mediaPreviewResolver = resolve;
+  });
+}
+
+function closeMediaPreviewModal(result) {
+  const modal = document.querySelector('#media-preview-modal');
+  if (modal) modal.classList.add('hidden');
+  if (mediaPreviewResolver) {
+    const resolve = mediaPreviewResolver;
+    mediaPreviewResolver = null;
+    resolve(result);
+  }
+}
+
+document.querySelectorAll('[data-close-media-preview]').forEach(el => {
+  el.addEventListener('click', () => closeMediaPreviewModal(null));
+});
+document.querySelector('#btn-media-preview-confirm')?.addEventListener('click', () => {
+  const captionEl = document.querySelector('#media-preview-caption');
+  closeMediaPreviewModal({ confirmed: true, caption: captionEl?.value || '' });
+});
+
 
 async function loadContacts() {
   try {
@@ -567,12 +661,14 @@ function renderChatMessages(messages, isGroup = false) {
       content += `<br><img src="${msg.media}" class="msg-media photo-clickable" loading="lazy">`;
     }
     if (msg.media && msg.mediaType === 'video') {
-      content += `<br><video src="${msg.media}" class="msg-media" controls playsinline></video>`;
+      // Видеосообщение — кружок (как в Telegram)
+      content += `<br><video src="${msg.media}" class="msg-video-bubble" controls playsinline></video>`;
     }
     if (msg.voice) {
       content += `<br><audio src="${msg.voice}" class="msg-voice" controls></audio>`;
     }
     msgEl.innerHTML = content || '(пусто)';
+
     chatMessages.appendChild(msgEl);
   });
   // Клик по фото — полноэкранный просмотр
@@ -1136,6 +1232,12 @@ let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
 let recordingType = null; // 'audio' | 'video'
+let recordingStream = null;
+let recordingVideoEl = null;
+let recordingStartTime = 0;
+let recordingTimer = null;
+let recordingBubbleEl = null;
+let recordingIndicatorEl = null;
 
 function blobToBase64(blob) {
   return new Promise((resolve) => {
@@ -1143,6 +1245,78 @@ function blobToBase64(blob) {
     reader.onload = () => resolve(reader.result);
     reader.readAsDataURL(blob);
   });
+}
+
+function formatRecordingTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return `${m}:${ss}`;
+}
+
+function showVoiceIndicator() {
+  hideRecordingUI();
+  const el = document.createElement('div');
+  el.className = 'voice-recording-indicator';
+  el.id = 'voice-recording-indicator';
+  el.innerHTML = `
+    <span class="voice-recording-dot"></span>
+    <span class="voice-recording-time" id="voice-recording-time">0:00</span>
+    <span>Идёт запись...</span>
+  `;
+  document.body.appendChild(el);
+  recordingIndicatorEl = el;
+  recordingStartTime = Date.now();
+  if (recordingTimer) clearInterval(recordingTimer);
+  const timeEl = el.querySelector('#voice-recording-time');
+  recordingTimer = setInterval(() => {
+    if (timeEl) timeEl.textContent = formatRecordingTime(Date.now() - recordingStartTime);
+  }, 250);
+}
+
+function showVideoBubble(stream) {
+  hideRecordingUI();
+  const el = document.createElement('div');
+  el.className = 'video-bubble recording';
+  el.id = 'video-bubble-recording';
+  el.innerHTML = `
+    <video id="video-bubble-video" autoplay muted playsinline></video>
+    <div class="video-bubble-time" id="video-bubble-time">0:00</div>
+    <button type="button" class="video-bubble-stop" id="video-bubble-stop" title="Стоп">СТОП</button>
+  `;
+  document.body.appendChild(el);
+  recordingBubbleEl = el;
+  recordingVideoEl = el.querySelector('#video-bubble-video');
+  if (recordingVideoEl && stream) {
+    recordingVideoEl.srcObject = stream;
+  }
+  recordingStartTime = Date.now();
+  if (recordingTimer) clearInterval(recordingTimer);
+  const timeEl = el.querySelector('#video-bubble-time');
+  recordingTimer = setInterval(() => {
+    if (timeEl) timeEl.textContent = formatRecordingTime(Date.now() - recordingStartTime);
+  }, 250);
+  el.querySelector('#video-bubble-stop')?.addEventListener('click', () => stopRecording());
+}
+
+function hideRecordingUI() {
+  if (recordingIndicatorEl) {
+    recordingIndicatorEl.remove();
+    recordingIndicatorEl = null;
+  }
+  if (recordingBubbleEl) {
+    if (recordingVideoEl) {
+      recordingVideoEl.pause();
+      recordingVideoEl.srcObject = null;
+      recordingVideoEl = null;
+    }
+    recordingBubbleEl.remove();
+    recordingBubbleEl = null;
+  }
+  if (recordingTimer) {
+    clearInterval(recordingTimer);
+    recordingTimer = null;
+  }
 }
 
 async function startRecording(type) {
@@ -1155,12 +1329,19 @@ async function startRecording(type) {
 
     const constraints = type === 'audio'
       ? { audio: true }
-      : { audio: true, video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 480 } } };
+      : { audio: true, video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } } };
 
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    recordingStream = stream;
     recordedChunks = [];
     recordingType = type;
     isRecording = true;
+
+    if (type === 'audio') {
+      showVoiceIndicator();
+    } else {
+      showVideoBubble(stream);
+    }
 
     mediaRecorder = new MediaRecorder(stream, { mimeType: type === 'audio' ? 'audio/webm' : 'video/webm' });
     mediaRecorder.ondataavailable = (e) => {
@@ -1168,7 +1349,11 @@ async function startRecording(type) {
     };
     mediaRecorder.onstop = async () => {
       isRecording = false;
-      stream.getTracks().forEach(t => t.stop());
+      hideRecordingUI();
+      if (recordingStream) {
+        recordingStream.getTracks().forEach(t => t.stop());
+        recordingStream = null;
+      }
 
       if (recordedChunks.length === 0) {
         setStatus('Запись прервана');
@@ -1177,10 +1362,21 @@ async function startRecording(type) {
 
       const blob = new Blob(recordedChunks, { type: type === 'audio' ? 'audio/webm' : 'video/webm' });
       const data = await blobToBase64(blob);
-
       recordedChunks = [];
-      setStatus('Отправка...');
 
+      // Показываем модалку предпросмотра перед отправкой
+      const previewResult = await openMediaPreviewModal({
+        title: type === 'audio' ? '🎤 Голосовое сообщение' : '📹 Видеосообщение',
+        data,
+        type,
+        withCaption: false
+      });
+      if (!previewResult || !previewResult.confirmed) {
+        setStatus('Запись отменена');
+        return;
+      }
+
+      setStatus('Отправка...');
       const body = { text: '' };
       if (type === 'audio') {
         body.voice = data;
@@ -1204,13 +1400,14 @@ async function startRecording(type) {
       } else {
         await openDmChat(currentChat);
       }
-      setStatus(type === 'audio' ? '🎤 Голосовое отправлено' : '📹 Видео отправлено');
+      setStatus(type === 'audio' ? '🎤 Голосовое отправлено' : '📹 Видеосообщение отправлено');
       playMessageSound();
     };
 
     mediaRecorder.start();
     setStatus(type === 'audio' ? '🎤 Запись... Нажмите 🎤 ещё раз для остановки' : '📹 Запись видео... Нажмите 📹 ещё раз');
   } catch (err) {
+    hideRecordingUI();
     setStatus('Ошибка доступа к микрофону/камере: ' + err.message);
     isRecording = false;
   }
@@ -1237,6 +1434,7 @@ btnVideoRecord?.addEventListener('click', () => {
     startRecording('video');
   }
 });
+
 
 // Заглушка для stories - готово для будущей реализации  
 async function createStory(mediaData) {

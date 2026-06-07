@@ -626,6 +626,285 @@ body.on-stand .stand-fab {
   cursor: pointer;
 }
 
+/* Предпросмотр медиа в форме поста */
+.media-preview {
+  position: relative;
+  margin: 10px 0 6px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--border);
+  max-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-preview img,
+.media-preview video {
+  max-width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  display: block;
+}
+
+.media-preview .media-preview-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(220,38,38,.85);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.media-preview .media-preview-remove:hover {
+  background: rgba(220,38,38,1);
+}
+
+/* Модальное окно предпросмотра медиа */
+.media-preview-card {
+  max-width: 540px;
+  width: 92vw;
+}
+
+.media-preview-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.35);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 14px;
+  min-height: 200px;
+  max-height: 60vh;
+  overflow: hidden;
+}
+
+.media-preview-content img,
+.media-preview-content video {
+  max-width: 100%;
+  max-height: 56vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.media-preview-content audio {
+  width: 100%;
+}
+
+.media-preview-caption {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.media-preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.media-preview-actions .btn-primary[data-close-media-preview] {
+  background: rgba(255,255,255,.08);
+}
+
+.media-preview-actions .btn-primary[data-close-media-preview]:hover {
+  background: rgba(255,255,255,.14);
+}
+
+@media (max-width: 600px) {
+  .media-preview-content {
+    min-height: 160px;
+  }
+  .media-preview-content img,
+  .media-preview-content video {
+    max-height: 50vh;
+  }
+}
+
+/* Индикатор записи голосового сообщения */
+.voice-recording-indicator {
+  position: fixed;
+  bottom: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, .92);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 8px 24px rgba(0,0,0,.35), 0 0 0 0 rgba(220,38,38,.5); }
+  50%      { box-shadow: 0 8px 24px rgba(0,0,0,.35), 0 0 0 14px rgba(220,38,38,0); }
+}
+
+.voice-recording-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  animation: voice-blink 1s ease-in-out infinite;
+}
+
+@keyframes voice-blink {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .4; transform: scale(0.7); }
+}
+
+.voice-recording-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
+  min-width: 36px;
+  text-align: left;
+}
+
+/* Кружок предпросмотра видеосообщения (как в Telegram) */
+.video-bubble {
+  position: fixed;
+  bottom: 92px;
+  right: 16px;
+  z-index: 110;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #000;
+  border: 4px solid rgba(139,92,246,.9);
+  box-shadow: 0 12px 40px rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: video-bubble-appear .2s ease;
+}
+
+@keyframes video-bubble-appear {
+  from { transform: scale(.6); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+.video-bubble video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1); /* зеркалим для селфи */
+  background: #000;
+}
+
+.video-bubble.recording::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239,68,68,.7);
+  animation: video-rec-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes video-rec-blink {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.7); }
+  50%      { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+}
+
+.video-bubble-time {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,.65);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+}
+
+.video-bubble-stop {
+  position: absolute;
+  bottom: 18px;
+  right: 18px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #fff;
+  border: 4px solid #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,.5);
+}
+
+/* Отправленное видеосообщение в чате (кружок) */
+.message .msg-video-bubble {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  margin-top: 4px;
+  background: #000;
+  transform: scaleX(-1);
+}
+
+@media (max-width: 600px) {
+  .voice-recording-indicator {
+    bottom: 90px;
+    font-size: .9rem;
+    padding: 10px 14px;
+  }
+  .video-bubble {
+    width: 170px;
+    height: 170px;
+    bottom: 86px;
+    right: 10px;
+  }
+  .video-bubble-stop {
+    width: 44px;
+    height: 44px;
+    bottom: 12px;
+    right: 12px;
+  }
+  .message .msg-video-bubble {
+    width: 170px;
+    height: 170px;
+  }
+}
+
 /* Полноэкранный просмотр фото */
 .photo-fullscreen {
   position: fixed;
@@ -645,7 +924,7 @@ body.on-stand .stand-fab {
   border-radius: 8px;
 }
 
-/* Закреплённая строка ввода сообщений */
+/* Мобильный чат: чат-area fixed, чат-messages — flex с прокруткой, чат-input — внутри flex */
 @media (max-width: 900px) {
   .chat-area {
     position: fixed;
@@ -654,23 +933,27 @@ body.on-stand .stand-fab {
     flex-direction: column;
     z-index: 50;
     background: var(--bg);
+    height: 100dvh; /* fallback для современных браузеров */
+    max-height: 100vh;
+    overflow: hidden;
   }
   .chat-messages {
-    flex: 1;
+    flex: 1 1 auto;
+    min-height: 0; /* обязательно для flex-прокрутки */
     overflow-y: auto;
-    padding: 12px 8px;
-    padding-bottom: 80px;
+    overflow-x: hidden;
+    padding: 8px;
+    padding-bottom: 12px;
+    -webkit-overflow-scrolling: touch;
   }
   .chat-input {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 51;
+    flex-shrink: 0;
     background: rgba(15, 23, 42, 0.96);
     backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-top: 1px solid var(--border);
     padding: 8px 12px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
     gap: 6px;
     flex-wrap: wrap;
   }
@@ -679,7 +962,7 @@ body.on-stand .stand-fab {
     width: 100%;
     min-width: 0;
     font-size: 1rem;
-    padding: 14px 16px;
+    padding: 12px 14px;
   }
   .chat-input .btn-emoji {
     padding: 8px 10px;
@@ -692,6 +975,7 @@ body.on-stand .stand-fab {
     padding: 12px;
   }
 }
+
 
 .chat-input {
   display: flex;

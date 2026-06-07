@@ -32,12 +32,13 @@
       <main class="card section page-section" data-section="feed">
         <div id="new-post-form" class="new-post-card">
           <input id="post-text" type="text" placeholder="Что на уме?" maxlength="300">
+          <div id="post-media-preview" class="media-preview hidden"></div>
           <div class="post-form-actions">
             <button type="button" id="post-emoji-toggle" class="btn-emoji" title="Эмодзи">😊</button>
             <div id="post-emoji-panel" class="emoji-panel hidden"></div>
             <label class="file-upload">
-              <span>Загрузить фото</span>
-              <input id="post-file" type="file" accept="image/*">
+              <span>Фото / Видео</span>
+              <input id="post-file" type="file" accept="image/*,video/*">
             </label>
             <button id="btn-post-create" class="btn-primary">Опубликовать</button>
           </div>
@@ -124,6 +125,21 @@
       </select>
       <input id="group-slug" type="text" placeholder="slug (необязательно)" maxlength="32">
       <button type="button" id="btn-group-create" class="btn-primary">Создать</button>
+    </div>
+  </div>
+
+  <!-- Универсальный предпросмотр медиа (для поста / stand / записи аудио-видео) -->
+  <div id="media-preview-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close-media-preview></div>
+    <div class="modal-card card media-preview-card">
+      <button type="button" class="modal-close" data-close-media-preview aria-label="Закрыть">×</button>
+      <h3 id="media-preview-title">Предпросмотр</h3>
+      <div id="media-preview-content" class="media-preview-content"></div>
+      <textarea id="media-preview-caption" class="media-preview-caption hidden" placeholder="Подпись..." maxlength="300"></textarea>
+      <div class="media-preview-actions">
+        <button type="button" class="btn-primary" data-close-media-preview>Отмена</button>
+        <button type="button" class="btn-primary" id="btn-media-preview-confirm">Готово</button>
+      </div>
     </div>
   </div>
 
