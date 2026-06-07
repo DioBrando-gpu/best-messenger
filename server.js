@@ -200,7 +200,9 @@ async function publicUserPayload(user, viewerUsername) {
     posts: postsCount,
     profileVisible: visible,
     canMessage: canMessageUser(viewerUsername, user),
-    isFollowing: user.followers?.includes(viewerUsername) || false
+    isFollowing: user.followers?.includes(viewerUsername) || false,
+    lastSeen: user.lastSeen || null,
+    lastSeenText: formatLastSeen(user.lastSeen)
   };
 }
 
@@ -264,12 +266,39 @@ app.get('/api/user', asyncHandler(async (req, res) => {
     return res.json({ loggedIn: false });
   }
   const user = await store.getUser(req.session.username);
+  // обновить lastSeen
+  if (user) {
+    user.lastSeen = new Date().toISOString();
+    await store.saveUser(user);
+  }
   res.json({
     loggedIn: true,
     username: req.session.username,
     settings: user?.settings || defaultSettings()
   });
 }));
+
+app.post('/api/user/heartbeat', requireAuth, asyncHandler(async (req, res) => {
+  const user = await store.getUser(req.session.username);
+  if (user) {
+    user.lastSeen = new Date().toISOString();
+    await store.saveUser(user);
+  }
+  res.json({ ok: true });
+}));
+
+function formatLastSeen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'только что';
+  if (diffMin < 60) return diffMin + ' мин. назад';
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return diffH + ' ч. назад';
+  return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
 
 app.get('/api/feed', requireAuth, asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;

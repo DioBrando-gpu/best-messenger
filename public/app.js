@@ -85,6 +85,7 @@ function playMessageSound() {
 
 function showSection(section) {
   pageSections.forEach(sec => sec.classList.toggle('hidden', sec.dataset.section !== section));
+  toggleBottomNav(section);
   const titles = {
     feed: t('title_feed'),
     messages: t('title_messages'),
@@ -151,6 +152,10 @@ async function loadUser() {
     applyLanguage(appSettings?.language || window.appLang);
     initEmojiPickers();
     window.currentUser = currentUser;
+    // Heartbeat — обновлять lastSeen каждые 2 минуты
+    setInterval(() => {
+      request('/api/user/heartbeat', { method: 'POST' }).catch(() => {});
+    }, 120000);
   } catch (error) {
     console.error(error);
     window.location.href = '/login.html';
@@ -206,6 +211,11 @@ function renderPost(post) {
   
   favoriteBtn?.addEventListener('click', () => favoritePost(post.id, card));
   commentToggleBtn?.addEventListener('click', () => commentsBlock.classList.toggle('hidden'));
+  card.querySelectorAll('img[src="' + (post.image || '---') + '"]').forEach(img => {
+    img.classList.add('photo-clickable');
+    img.style.cursor = 'pointer';
+    img.addEventListener('click', () => openPhotoFullscreen(img.src));
+  });
   shareBtn?.addEventListener('click', () => sharePost(post.id, card));
   repostBtn?.addEventListener('click', () => repostPost(post.id));
   likeBtn?.addEventListener('click', () => likePost(post.id, card));
@@ -550,25 +560,41 @@ function renderChatMessages(messages, isGroup = false) {
     if (isGroup && !mine) {
       content += `<small>@${msg.from}</small><br>`;
     }
-    // Текст
     if (msg.text) {
       content += escapeHtml(msg.text);
     }
-    // Медиа (фото/видео)
     if (msg.media && msg.mediaType === 'image') {
-      content += `<br><img src="${msg.media}" class="msg-media" loading="lazy">`;
+      content += `<br><img src="${msg.media}" class="msg-media photo-clickable" loading="lazy">`;
     }
     if (msg.media && msg.mediaType === 'video') {
       content += `<br><video src="${msg.media}" class="msg-media" controls playsinline></video>`;
     }
-    // Голосовое
     if (msg.voice) {
       content += `<br><audio src="${msg.voice}" class="msg-voice" controls></audio>`;
     }
     msgEl.innerHTML = content || '(пусто)';
     chatMessages.appendChild(msgEl);
   });
+  // Клик по фото — полноэкранный просмотр
+  chatMessages.querySelectorAll('.photo-clickable').forEach(img => {
+    img.addEventListener('click', () => openPhotoFullscreen(img.src));
+  });
   chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function openPhotoFullscreen(src) {
+  const overlay = document.createElement('div');
+  overlay.className = 'photo-fullscreen';
+  overlay.innerHTML = `<img src="${src}" alt="">`;
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
+}
+
+function toggleBottomNav(section) {
+  const bottomNav = document.querySelector('.bottom-nav');
+  if (!bottomNav) return;
+  const hideSections = ['messages', 'search'];
+  bottomNav.style.display = (hideSections.includes(section)) ? 'none' : '';
 }
 
 function escapeHtml(text) {
@@ -703,6 +729,7 @@ async function openUserProfile(username) {
             <div><strong>${data.following ?? 0}</strong> ${t('following_count')}</div>
           </div>
         ` : ''}
+        ${data.lastSeenText ? `<p style="font-size:.8rem;color:var(--text-muted)">🕐 ${data.lastSeenText}</p>` : ''}
         <div class="profile-actions">
           ${data.username !== currentUser ? `
             <button type="button" class="btn-primary" id="modal-follow-btn">${data.isFollowing ? t('following') : t('follow')}</button>
