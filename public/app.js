@@ -1028,6 +1028,23 @@ navProfile?.addEventListener('click', () => showSection('profile'));
 navSettings?.addEventListener('click', () => showSection('settings'));
 navStand?.addEventListener('click', () => { showSection('stand'); loadStandFeed(true); });
 
+// Нижняя навигация для мобильных
+document.querySelector('#bnav-feed')?.addEventListener('click', () => showSection('feed'));
+document.querySelector('#bnav-messages')?.addEventListener('click', () => showSection('messages'));
+document.querySelector('#bnav-stand')?.addEventListener('click', () => { showSection('stand'); loadStandFeed(true); });
+document.querySelector('#bnav-search')?.addEventListener('click', () => { showSection('search'); loadSearchPeople(); });
+document.querySelector('#bnav-profile')?.addEventListener('click', () => showSection('profile'));
+
+// Синхронизация активной кнопки в нижней навигации
+const origShowSection = window.showSection || showSection;
+showSection = function(section) {
+  origShowSection(section);
+  document.querySelectorAll('.bnav-btn').forEach(btn => btn.classList.remove('active'));
+  const map = { feed: 'bnav-feed', messages: 'bnav-messages', stand: 'bnav-stand', search: 'bnav-search', profile: 'bnav-profile' };
+  const activeId = map[section];
+  if (activeId) document.querySelector('#' + activeId)?.classList.add('active');
+};
+
 document.querySelector('#settings-nav')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.settings-nav-btn');
   if (!btn) return;
