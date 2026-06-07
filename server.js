@@ -1067,14 +1067,37 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+app.get('/api/__debug', asyncHandler(async (req, res) => {
+  const mode = process.env.DATABASE_URL ? 'postgres' : 'json';
+  const users = (await store.readUsers()).length;
+  const posts = (await store.readPosts()).length;
+  const messages = (await store.readMessages()).length;
+  const stands = (await store.readStands()).length;
+  const groups = (await store.readGroups()).length;
+  res.json({ mode, counts: { users, posts, messages, stands, groups }, hasDbUrl: !!process.env.DATABASE_URL });
+}));
+
 async function start() {
   const info = await store.init();
+  console.log(`=== DIO START === storage: ${info.mode}, DATABASE_URL: ${process.env.DATABASE_URL ? 'yes' : 'no'}`);
+  if (info.mode === 'postgres') {
+    try {
+      const counts = await Promise.all([
+        store.readUsers().then(u => u.length),
+        store.readPosts().then(p => p.length),
+        store.readMessages().then(m => m.length),
+        store.readStands().then(s => s.length)
+      ]);
+      console.log(`=== DB COUNTS === users:${counts[0]} posts:${counts[1]} messages:${counts[2]} stands:${counts[3]}`);
+    } catch (e) {
+      console.error('=== DB ERROR ===', e.message);
+    }
+  }
   app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT} (storage: ${info.mode})`);
+    console.log(`Server started on port ${PORT}`);
   });
 }
 
 start().catch(err => {
   console.error('Failed to start:', err);
-  process.exit(1);
 });
