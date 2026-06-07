@@ -6,6 +6,21 @@
     "bio": "Новый пользователь DIO",
     "followers": [],
     "following": [],
-    "createdAt": "2026-06-02T12:52:23.353Z"
+    "createdAt": "2026-06-02T12:52:23.353Z",
+    "settings": {
+      "notifications": {
+        "enabled": true,
+        "sound": true,
+        "messagePreview": true,
+        "posts": true
+      },
+      "privacy": {
+        "profileVisible": true,
+        "allowMessages": "everyone",
+        "showLastSeen": true
+      },
+      "language": "ru",
+      "theme": "dark"
+    }
   }
 ]

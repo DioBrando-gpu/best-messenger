@@ -782,7 +782,64 @@ app.get('/api/settings', requireAuth, asyncHandler(async (req, res) => {
   if (!user) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
-  res.json({ settings: user.settings });
+  res.json({ settings: user.settings, email: user.email || '' });
+}));
+
+// Смена пароля
+app.post('/api/settings/change-password', requireAuth, asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json({ message: 'Укажите текущий и новый пароль' });
+  }
+  if (newPassword.length < 5) {
+    return res.status(400).json({ message: 'Новый пароль: минимум 5 символов' });
+  }
+  const user = await store.getUser(req.session.username);
+  if (!user) return res.status(404).json({ message: 'Пользователь не найден' });
+  if (user.password !== oldPassword) {
+    return res.status(400).json({ message: 'Неверный текущий пароль' });
+  }
+  user.password = newPassword;
+  await store.saveUser(user);
+  res.json({ message: 'Пароль успешно изменён' });
+}));
+
+// Привязка / изменение почты
+app.post('/api/settings/update-email', requireAuth, asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ message: 'Введите корректный email' });
+  }
+  // Проверить, не занят ли email другим пользователем
+  const users = await readUsers();
+  const emailTaken = users.find(u => u.email === email && u.username !== req.session.username);
+  if (emailTaken) {
+    return res.status(409).json({ message: 'Этот email уже привязан к другому аккаунту' });
+  }
+  const user = await store.getUser(req.session.username);
+  if (!user) return res.status(404).json({ message: 'Пользователь не найден' });
+  user.email = email;
+  await store.saveUser(user);
+  res.json({ message: 'Почта привязана', email });
+}));
+
+// Смена username
+app.post('/api/settings/change-username', requireAuth, asyncHandler(async (req, res) => {
+  const { newUsername } = req.body;
+  const validation = validateUsername(newUsername);
+  if (!validation.valid) {
+    return res.status(400).json({ message: validation.message });
+  }
+  if (validation.username === req.session.username) {
+    return res.status(400).json({ message: 'Username не изменился' });
+  }
+  const users = await readUsers();
+  if (isUsernameTaken(users, validation.username)) {
+    return res.status(409).json({ message: 'Этот @username уже занят' });
+  }
+  await store.renameUsername(req.session.username, validation.username);
+  req.session.username = validation.username;
+  res.json({ message: 'Username изменён', username: validation.username });
 }));
 
 app.put('/api/settings', requireAuth, asyncHandler(async (req, res) => {

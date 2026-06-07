@@ -832,18 +832,48 @@ function renderSettingsUI() {
     </div>
     <div class="settings-panel hidden" data-panel="account">
       <div class="settings-group">
-        <label for="set-username">${t('username_label')}</label>
-        <input id="set-username" type="text" value="${currentUser || ''}" maxlength="32" autocomplete="off" spellcheck="false">
+        <h3 style="margin:0 0 8px;font-size:1rem;">${t('username_label')}</h3>
+        <p class="settings-hint" id="account-current-username">@${currentUser || ''}</p>
+        <label for="set-username">${t('username_new')}</label>
+        <input id="set-username" type="text" placeholder="@username" maxlength="32" autocomplete="off" spellcheck="false">
         <p class="settings-hint">${t('username_hint')}</p>
+        <p class="settings-hint" id="username-availability" style="min-height:1em;"></p>
+        <button type="button" class="btn-primary" id="btn-save-username">${t('change_username')}</button>
+      </div>
+
+      <div class="settings-group">
+        <h3 style="margin:0 0 8px;font-size:1rem;">${t('email_label')}</h3>
+        <p class="settings-hint" id="account-current-email">—</p>
+        <label for="set-email">${t('email_label')}</label>
+        <input id="set-email" type="email" placeholder="user@example.com" maxlength="120" autocomplete="off" spellcheck="false">
+        <p class="settings-hint">${t('email_hint')}</p>
+        <button type="button" class="btn-primary" id="btn-save-email">${t('change_email')}</button>
+      </div>
+
+      <div class="settings-group">
+        <h3 style="margin:0 0 8px;font-size:1rem;">${t('change_password')}</h3>
+        <label for="set-old-password">${t('password_current')}</label>
+        <input id="set-old-password" type="password" placeholder="••••••" autocomplete="current-password" maxlength="128">
+        <label for="set-new-password">${t('password_new')}</label>
+        <input id="set-new-password" type="password" placeholder="••••••" autocomplete="new-password" maxlength="128">
+        <label for="set-confirm-password">${t('password_confirm')}</label>
+        <input id="set-confirm-password" type="password" placeholder="••••••" autocomplete="new-password" maxlength="128">
+        <p class="settings-hint">${t('password_hint')}</p>
+        <button type="button" class="btn-primary" id="btn-save-password">${t('change_password')}</button>
+      </div>
+
+      <div class="settings-group">
+        <h3 style="margin:0 0 8px;font-size:1rem;">Bio</h3>
         <label for="set-bio">Bio</label>
         <textarea id="set-bio" rows="3" maxlength="200"></textarea>
-        <button type="button" class="btn-primary" id="btn-save-account">${t('save')}</button>
+        <button type="button" class="btn-primary" id="btn-save-bio">${t('save')}</button>
       </div>
     </div>
   `;
 
   bindSettingsToggles();
   loadAccountStats();
+  loadAccountEmail();
   request('/api/profile').then(p => {
     const bioEl = document.querySelector('#set-bio');
     if (bioEl) bioEl.value = p.bio || '';
@@ -869,25 +899,160 @@ function renderSettingsUI() {
     saveSettings({ theme });
   });
 
-  document.querySelector('#btn-save-account')?.addEventListener('click', async () => {
+  let usernameCheckTimer = null;
+  const usernameInput = document.querySelector('#set-username');
+  usernameInput?.addEventListener('input', () => {
+    clearTimeout(usernameCheckTimer);
+    usernameCheckTimer = setTimeout(() => checkUsernameAvailability(), 350);
+  });
+  usernameInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      checkUsernameAvailability();
+    }
+  });
+
+  document.querySelector('#btn-save-username')?.addEventListener('click', async () => {
     const username = normalizeUsername(document.querySelector('#set-username')?.value);
-    const bio = document.querySelector('#set-bio')?.value || '';
     if (!USERNAME_REGEX.test(username)) {
       setStatus(t('username_hint'));
       return;
     }
+    if (username === currentUser) {
+      setStatus('Username не изменился');
+      return;
+    }
+    try {
+      const result = await request('/api/settings/change-username', {
+        method: 'POST',
+        body: JSON.stringify({ newUsername: username })
+      });
+      currentUser = result.username;
+      const display = document.querySelector('#account-current-username');
+      if (display) display.textContent = '@' + result.username;
+      const input = document.querySelector('#set-username');
+      if (input) input.value = '';
+      window.currentUser = currentUser;
+      setStatus(result.message);
+      loadProfile();
+      setTimeout(() => window.location.reload(), 800);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  document.querySelector('#btn-save-email')?.addEventListener('click', async () => {
+    const email = String(document.querySelector('#set-email')?.value || '').trim();
+    if (!email) {
+      setStatus('Введите email');
+      return;
+    }
+    try {
+      const result = await request('/api/settings/update-email', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+      const display = document.querySelector('#account-current-email');
+      if (display) display.textContent = result.email || t('email_empty');
+      const input = document.querySelector('#set-email');
+      if (input) input.value = '';
+      setStatus(result.message);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  document.querySelector('#btn-save-password')?.addEventListener('click', async () => {
+    const oldPassword = document.querySelector('#set-old-password')?.value || '';
+    const newPassword = document.querySelector('#set-new-password')?.value || '';
+    const confirm = document.querySelector('#set-confirm-password')?.value || '';
+    if (!oldPassword || !newPassword) {
+      setStatus('Заполните все поля пароля');
+      return;
+    }
+    if (newPassword.length < 5) {
+      setStatus('Новый пароль: минимум 5 символов');
+      return;
+    }
+    if (newPassword !== confirm) {
+      setStatus('Пароли не совпадают');
+      return;
+    }
+    try {
+      const result = await request('/api/settings/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ oldPassword, newPassword })
+      });
+      setStatus(result.message);
+      document.querySelector('#set-old-password').value = '';
+      document.querySelector('#set-new-password').value = '';
+      document.querySelector('#set-confirm-password').value = '';
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  document.querySelector('#btn-save-bio')?.addEventListener('click', async () => {
+    const bio = document.querySelector('#set-bio')?.value || '';
     try {
       const result = await request('/api/profile', {
         method: 'PATCH',
-        body: JSON.stringify({ username, bio })
+        body: JSON.stringify({ bio })
       });
-      currentUser = result.username;
       setStatus(result.message);
       loadProfile();
     } catch (error) {
       setStatus(error.message);
     }
   });
+}
+
+async function loadAccountEmail() {
+  try {
+    const data = await request('/api/settings');
+    const display = document.querySelector('#account-current-email');
+    if (display) {
+      display.textContent = data.email ? data.email : `(${t('email_empty')})`;
+    }
+    const input = document.querySelector('#set-email');
+    if (input && data.email) input.placeholder = data.email;
+  } catch (_) { /* ignore */ }
+}
+
+function checkUsernameAvailability() {
+  const input = document.querySelector('#set-username');
+  const hint = document.querySelector('#username-availability');
+  if (!input || !hint) return;
+  const username = normalizeUsername(input.value);
+  if (!username) {
+    hint.textContent = '';
+    hint.style.color = '';
+    return;
+  }
+  if (username === currentUser) {
+    hint.textContent = '— это ваш текущий @username';
+    hint.style.color = 'var(--text-muted)';
+    return;
+  }
+  if (!USERNAME_REGEX.test(username)) {
+    hint.textContent = t('username_hint');
+    hint.style.color = 'var(--text-muted)';
+    return;
+  }
+  request(`/api/users/lookup/${encodeURIComponent(username)}`)
+    .then(() => {
+      hint.textContent = t('username_taken');
+      hint.style.color = '#ef4444';
+    })
+    .catch((err) => {
+      if (err.message && /не найден/i.test(err.message)) {
+        hint.textContent = '✓ свободен';
+        hint.style.color = '#22c55e';
+      } else {
+        hint.textContent = '';
+        hint.style.color = '';
+      }
+    });
 }
 
 function settingsToggleRow(i18nKey, id, checked) {
