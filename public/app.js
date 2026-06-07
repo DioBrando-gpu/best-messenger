@@ -29,6 +29,9 @@ const chatHeader = document.querySelector('#chat-header');
 const navStand = document.querySelector('#nav-stand');
 const groupModal = document.querySelector('#group-modal');
 const btnSearchExact = document.querySelector('#btn-search-exact');
+const btnMediaUpload = document.querySelector('#btn-media-upload');
+const btnVoiceRecord = document.querySelector('#btn-voice-record');
+const btnVideoRecord = document.querySelector('#btn-video-record');
 
 const USERNAME_REGEX = /^[a-z0-9_]{5,32}$/;
 
@@ -543,11 +546,26 @@ function renderChatMessages(messages, isGroup = false) {
     const msgEl = document.createElement('div');
     const mine = msg.from === currentUser;
     msgEl.className = `message ${mine ? 'sent' : 'received'}`;
+    let content = '';
     if (isGroup && !mine) {
-      msgEl.innerHTML = `<small>@${msg.from}</small><br>${escapeHtml(msg.text)}`;
-    } else {
-      msgEl.textContent = msg.text;
+      content += `<small>@${msg.from}</small><br>`;
     }
+    // Текст
+    if (msg.text) {
+      content += escapeHtml(msg.text);
+    }
+    // Медиа (фото/видео)
+    if (msg.media && msg.mediaType === 'image') {
+      content += `<br><img src="${msg.media}" class="msg-media" loading="lazy">`;
+    }
+    if (msg.media && msg.mediaType === 'video') {
+      content += `<br><video src="${msg.media}" class="msg-media" controls playsinline></video>`;
+    }
+    // Голосовое
+    if (msg.voice) {
+      content += `<br><audio src="${msg.voice}" class="msg-voice" controls></audio>`;
+    }
+    msgEl.innerHTML = content || '(пусто)';
     chatMessages.appendChild(msgEl);
   });
   chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -559,13 +577,46 @@ function escapeHtml(text) {
   return d.innerHTML;
 }
 
+// Скрытый input для загрузки медиа в чат
+const chatMediaInput = document.createElement('input');
+chatMediaInput.type = 'file';
+chatMediaInput.accept = 'image/*,video/*';
+chatMediaInput.style.display = 'none';
+document.body.appendChild(chatMediaInput);
+
+// Флаг отправки медиа (ставим перед отправкой)
+let pendingMedia = null; // { data, type }
+
+btnMediaUpload?.addEventListener('click', () => {
+  chatMediaInput.click();
+});
+
+chatMediaInput.addEventListener('change', async () => {
+  const file = chatMediaInput.files?.[0];
+  if (!file) return;
+  const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+  const data = await readFileAsDataURL(file);
+  pendingMedia = { data, mediaType };
+  setStatus(`📎 ${file.name} прикреплён. Отправьте сообщение.`);
+  chatMediaInput.value = '';
+});
+
 async function sendMessage() {
   try {
-    if (!currentChat || !messageText.value.trim()) return;
+    if (!currentChat) return;
+    const text = messageText.value.trim();
+    const hasMedia = pendingMedia?.data;
+    if (!text && !hasMedia) return;
 
-    const body = currentChatType === 'group'
-      ? { groupId: currentGroupId, text: messageText.value }
-      : { to: currentChat, text: messageText.value };
+    const body = {
+      text: text || '',
+      ...(pendingMedia ? { media: pendingMedia.data, mediaType: pendingMedia.mediaType } : {})
+    };
+    if (currentChatType === 'group') {
+      body.groupId = currentGroupId;
+    } else {
+      body.to = currentChat;
+    }
 
     await request('/api/messages/send', {
       method: 'POST',
@@ -573,6 +624,7 @@ async function sendMessage() {
     });
 
     messageText.value = '';
+    pendingMedia = null;
     if (currentChatType === 'group') {
       await openGroupChat(currentGroupId);
     } else {
@@ -834,19 +886,113 @@ async function logout() {
   }
 }
 
-// Заглушка для голосовых сообщений - готово для будущей реализации
-async function sendVoiceMessage(audioBlob) {
-  // TODO: Реализовать отправку голосовых сообщений
-  // const audioData = await blobToBase64(audioBlob);
-  // await request('/api/voice/send', {
-  //   method: 'POST',
-  //   body: JSON.stringify({
-  //     to: currentChat,
-  //     audioData: audioData
-  //   })
-  // });
-  setStatus('Голосовые сообщения в разработке 🎤');
+// ========== ГОЛОСОВЫЕ И ВИДЕОСООБЩЕНИЯ ==========
+
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+let recordingType = null; // 'audio' | 'video'
+
+function blobToBase64(blob) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
 }
+
+async function startRecording(type) {
+  try {
+    if (!currentChat) {
+      setStatus('Сначала откройте чат');
+      return;
+    }
+    if (isRecording) return;
+
+    const constraints = type === 'audio'
+      ? { audio: true }
+      : { audio: true, video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 480 } } };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    recordedChunks = [];
+    recordingType = type;
+    isRecording = true;
+
+    mediaRecorder = new MediaRecorder(stream, { mimeType: type === 'audio' ? 'audio/webm' : 'video/webm' });
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+    mediaRecorder.onstop = async () => {
+      isRecording = false;
+      stream.getTracks().forEach(t => t.stop());
+
+      if (recordedChunks.length === 0) {
+        setStatus('Запись прервана');
+        return;
+      }
+
+      const blob = new Blob(recordedChunks, { type: type === 'audio' ? 'audio/webm' : 'video/webm' });
+      const data = await blobToBase64(blob);
+
+      recordedChunks = [];
+      setStatus('Отправка...');
+
+      const body = { text: '' };
+      if (type === 'audio') {
+        body.voice = data;
+      } else {
+        body.media = data;
+        body.mediaType = 'video';
+      }
+      if (currentChatType === 'group') {
+        body.groupId = currentGroupId;
+      } else {
+        body.to = currentChat;
+      }
+
+      await request('/api/messages/send', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+
+      if (currentChatType === 'group') {
+        await openGroupChat(currentGroupId);
+      } else {
+        await openDmChat(currentChat);
+      }
+      setStatus(type === 'audio' ? '🎤 Голосовое отправлено' : '📹 Видео отправлено');
+      playMessageSound();
+    };
+
+    mediaRecorder.start();
+    setStatus(type === 'audio' ? '🎤 Запись... Нажмите 🎤 ещё раз для остановки' : '📹 Запись видео... Нажмите 📹 ещё раз');
+  } catch (err) {
+    setStatus('Ошибка доступа к микрофону/камере: ' + err.message);
+    isRecording = false;
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && isRecording) {
+    mediaRecorder.stop();
+  }
+}
+
+btnVoiceRecord?.addEventListener('click', () => {
+  if (isRecording && recordingType === 'audio') {
+    stopRecording();
+  } else {
+    startRecording('audio');
+  }
+});
+
+btnVideoRecord?.addEventListener('click', () => {
+  if (isRecording && recordingType === 'video') {
+    stopRecording();
+  } else {
+    startRecording('video');
+  }
+});
 
 // Заглушка для stories - готово для будущей реализации  
 async function createStory(mediaData) {

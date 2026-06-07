@@ -575,6 +575,23 @@ body.on-stand .stand-fab {
   color: #f8fafc;
 }
 
+.msg-media {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 12px;
+  margin-top: 4px;
+}
+
+.msg-voice {
+  max-width: 100%;
+  margin-top: 4px;
+  height: 40px;
+}
+
+.message.sent .msg-voice {
+  filter: invert(0);
+}
+
 .chat-input {
   display: flex;
   gap: 12px;

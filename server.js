@@ -584,9 +584,13 @@ app.get('/api/chat/group/:groupId', requireAuth, asyncHandler(async (req, res) =
 }));
 
 app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
-  const { to, groupId, text } = req.body;
-  if (!text || !String(text).trim()) {
-    return res.status(400).json({ message: 'Введите текст сообщения' });
+  const { to, groupId, text, media, mediaType, voice } = req.body;
+  if (!text && !media && !voice) {
+    return res.status(400).json({ message: 'Пустое сообщение' });
+  }
+  const bodyText = String(text || '').trim();
+  if (!bodyText && !media && !voice) {
+    return res.status(400).json({ message: 'Пустое сообщение' });
   }
 
   const messages = await readMessages();
@@ -604,7 +608,10 @@ app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
       from: req.session.username,
       to: `group:${group.id}`,
       groupId: group.id,
-      text: text.trim(),
+      text: bodyText || null,
+      media: media || null,
+      mediaType: mediaType || null,
+      voice: voice || null,
       timestamp: new Date().toISOString(),
       read: false
     };
@@ -631,7 +638,10 @@ app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
     from: req.session.username,
     to: recipient.username,
     groupId: null,
-    text: text.trim(),
+    text: bodyText || null,
+    media: media || null,
+    mediaType: mediaType || null,
+    voice: voice || null,
     timestamp: new Date().toISOString(),
     read: false
   };
