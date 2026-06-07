@@ -592,6 +592,40 @@ body.on-stand .stand-fab {
   filter: invert(0);
 }
 
+.chat-media-preview {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,.02);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.chat-preview-media {
+  max-height: 80px;
+  max-width: 120px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.chat-preview-remove {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(220,38,38,.7);
+  color: #fff;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+}
+
 .chat-input {
   display: flex;
   gap: 12px;

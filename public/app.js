@@ -595,11 +595,62 @@ chatMediaInput.addEventListener('change', async () => {
   const file = chatMediaInput.files?.[0];
   if (!file) return;
   const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
-  const data = await readFileAsDataURL(file);
-  pendingMedia = { data, mediaType };
+  setStatus('Обработка медиа...');
+  const data = await compressMedia(file, mediaType);
+  pendingMedia = { data, mediaType, name: file.name };
+  updateMediaPreview();
   setStatus(`📎 ${file.name} прикреплён. Отправьте сообщение.`);
   chatMediaInput.value = '';
 });
+
+// Сжатие изображений
+async function compressMedia(file, mediaType) {
+  if (mediaType === 'image') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1280;
+          let w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+            else { w = Math.round((w * maxDim) / h); h = maxDim; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        };
+        img.onerror = reject;
+        img.src = reader.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+  return readFileAsDataURL(file);
+}
+
+function updateMediaPreview() {
+  const preview = document.querySelector('#chat-media-preview');
+  if (!preview) return;
+  if (pendingMedia?.data) {
+    preview.classList.remove('hidden');
+    if (pendingMedia.mediaType === 'video') {
+      preview.innerHTML = '<video src="' + pendingMedia.data + '" class="chat-preview-media" controls playsinline></video><button type="button" class="chat-preview-remove" title="Убрать">×</button>';
+    } else {
+      preview.innerHTML = '<img src="' + pendingMedia.data + '" class="chat-preview-media" alt=""><button type="button" class="chat-preview-remove" title="Убрать">×</button>';
+    }
+    preview.querySelector('.chat-preview-remove').addEventListener('click', () => {
+      pendingMedia = null;
+      updateMediaPreview();
+    });
+  } else {
+    preview.classList.add('hidden');
+    preview.innerHTML = '';
+  }
+}
 
 async function sendMessage() {
   try {
@@ -625,6 +676,7 @@ async function sendMessage() {
 
     messageText.value = '';
     pendingMedia = null;
+    updateMediaPreview();
     if (currentChatType === 'group') {
       await openGroupChat(currentGroupId);
     } else {
