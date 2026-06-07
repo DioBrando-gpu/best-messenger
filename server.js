@@ -1063,10 +1063,6 @@ app.get('/api/stories/feed', requireAuth, asyncHandler(async (req, res) => {
   res.json({ stories: enrichedStories });
 }));
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
 app.get('/api/__debug', asyncHandler(async (req, res) => {
   const mode = process.env.DATABASE_URL ? 'postgres' : 'json';
   const users = (await store.readUsers()).length;
@@ -1076,6 +1072,10 @@ app.get('/api/__debug', asyncHandler(async (req, res) => {
   const groups = (await store.readGroups()).length;
   res.json({ mode, counts: { users, posts, messages, stands, groups }, hasDbUrl: !!process.env.DATABASE_URL });
 }));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 async function start() {
   const info = await store.init();
