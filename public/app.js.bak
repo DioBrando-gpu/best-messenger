@@ -879,8 +879,8 @@ navFeed?.addEventListener('click', () => showSection('feed'));
 navMessages?.addEventListener('click', () => showSection('messages'));
 navSearch?.addEventListener('click', () => { showSection('search'); loadSearchPeople(); });
 navProfile?.addEventListener('click', () => showSection('profile'));
-navSettings?.addEventListener('click', () => showSection('settings'));
-navStand?.addEventListener('click', () => { showSection('stand'); loadStandFeed(true); });
+{"text": "navSettings?.addEventListener('click', () => showSection('settings'));
+navStand?.addEventListener('click', () => { showSection('stand'); loadStandFeed(true); });"}
 
 document.querySelector('#settings-nav')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.settings-nav-btn');
@@ -951,11 +951,4 @@ searchUsersInput?.addEventListener('input', (e) => {
 
 applyTheme(localStorage.getItem('dio_theme') || 'dark');
 applyLanguage(window.appLang);
-showSection('feed');
-loadUser();
-
-// Глобальные экспорты функций для stand.js
-window.request = request;
-window.setStatus = setStatus;
-window.readFileAsDataURL = readFileAsDataURL;
-window.attachEmojiPicker = attachEmojiPicker;
+"\r\nshowSection('feed');\r\nloadUser();\r\n\r\n// Глобальные экспорты функций для stand.js\r\nwindow.request = request;\r\nwindow.setStatus = setStatus;\r\nwindow.readFileAsDataURL = readFileAsDataURL;\r\nwindow.attachEmojiPicker = attachEmojiPicker;\r\n"}

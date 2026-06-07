@@ -196,10 +196,4 @@ btnStandUpload?.addEventListener('click', async () => {
   }
 });
 
-navStand?.addEventListener('click', () => {
-  showSection('stand');
-  loadStandFeed(true);
-});
-
-
 window.loadStandFeed = loadStandFeed;
