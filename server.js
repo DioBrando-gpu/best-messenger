@@ -580,7 +580,7 @@ function getDmContacts(username, messages) {
   }));
 }
 
-// Delete a single message
+// Delete a single message - any participant can delete (removes for everyone)
 app.delete('/api/messages/:id', requireAuth, asyncHandler(async (req, res) => {
   const messages = await readMessages();
   const msgId = parseInt(req.params.id);
@@ -591,12 +591,26 @@ app.delete('/api/messages/:id', requireAuth, asyncHandler(async (req, res) => {
   }
   
   const msg = messages[msgIndex];
-  if (msg.from !== req.session.username) {
-    return res.status(403).json({ message: 'Можно удалять только свои сообщения' });
+  
+  // Only participants can delete (sender or receiver in DM, or group member)
+  const isDm = !msg.groupId;
+  const isReceiver = msg.to === req.session.username;
+  const isSender = msg.from === req.session.username;
+  
+  if (isDm) {
+    if (!isSender && !isReceiver) {
+      return res.status(403).json({ message: 'Вы не участник этого чата' });
+    }
+  } else {
+    // Group message - any member can delete
+    const group = findGroupById(await readGroups(), msg.groupId);
+    if (!group || !isGroupMember(group, req.session.username)) {
+      return res.status(403).json({ message: 'Вы не участник этой группы' });
+    }
   }
   
-  // Mark as deleted instead of removing (like Telegram)
-  messages[msgIndex] = { ...msg, text: null, media: null, mediaType: null, voice: null, deleted: true };
+  // Completely remove the message (for everyone)
+  messages.splice(msgIndex, 1);
   await writeMessages(messages);
   res.json({ message: 'Сообщение удалено' });
 }));

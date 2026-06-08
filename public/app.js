@@ -709,13 +709,6 @@ function renderChatMessages(messages, isGroup = false) {
     const mine = msg.from === currentUser;
     msgEl.className = `message ${mine ? 'sent' : 'received'}`;
     
-    // Message deleted state
-    if (msg.deleted) {
-      msgEl.innerHTML = '<em style="opacity:0.5;font-style:italic;">' + t('message_deleted') + '</em>';
-      chatMessages.appendChild(msgEl);
-      return;
-    }
-    
     let content = '';
     if (isGroup && !mine) {
       content += `<small>@${msg.from}</small><br>`;
@@ -733,17 +726,15 @@ function renderChatMessages(messages, isGroup = false) {
       content += `<br><audio src="${msg.voice}" class="msg-voice" controls></audio>`;
     }
     
-    // Reactions row
+    // Reactions row - show ABOVE the actions
     const reactionsStr = getReactionsString(msg.reactions);
     if (reactionsStr) {
       content += `<div class="msg-reactions-row">${reactionsStr}</div>`;
     }
     
-    // Actions row (delete + reactions for own messages, reactions for received)
+    // Actions row - delete button for anyone (any participant can delete), react for all
     content += `<div class="msg-actions-row">`;
-    if (mine) {
-      content += `<button class="msg-action-btn msg-delete-btn" data-id="${msg.id}" title="${t('delete_message')}">🗑</button>`;
-    }
+    content += `<button class="msg-action-btn msg-delete-btn" data-id="${msg.id}" title="${t('delete_message')}">🗑</button>`;
     content += `<button class="msg-action-btn msg-react-btn" data-id="${msg.id}" title="${t('reaction_add')}">😊</button>`;
     content += `</div>`;
     
@@ -753,13 +744,21 @@ function renderChatMessages(messages, isGroup = false) {
     msgEl.querySelectorAll('.photo-clickable').forEach(img => {
       img.addEventListener('click', () => openPhotoFullscreen(img.src));
     });
-    msgEl.querySelector('.msg-delete-btn')?.addEventListener('click', () => deleteMessage(msg.id));
+    msgEl.querySelector('.msg-delete-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Show confirmation inline
+      if (confirm(t('delete_message_confirm'))) {
+        deleteMessage(msg.id);
+      }
+    });
     msgEl.querySelector('.msg-react-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       showReactionPicker(msg.id, msgEl);
     });
+    // Click on existing reaction to toggle
     msgEl.querySelectorAll('.msg-reaction').forEach(el => {
-      el.addEventListener('click', () => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
         const emoji = el.dataset.reaction;
         reactToMessage(msg.id, emoji);
       });
@@ -778,6 +777,7 @@ function showReactionPicker(msgId, msgEl) {
   if (activeReactionPicker) {
     activeReactionPicker.remove();
     activeReactionPicker = null;
+    return;
   }
   
   const picker = document.createElement('div');
@@ -786,11 +786,13 @@ function showReactionPicker(msgId, msgEl) {
     `<button type="button" class="reaction-picker-btn" data-emoji="${emoji}">${emoji}</button>`
   ).join('');
   
+  // Only show reactions that aren't already used by this user
   msgEl.appendChild(picker);
   activeReactionPicker = picker;
   
   picker.querySelectorAll('.reaction-picker-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const emoji = btn.dataset.emoji;
       reactToMessage(msgId, emoji);
       picker.remove();
@@ -800,15 +802,15 @@ function showReactionPicker(msgId, msgEl) {
   
   // Close on click outside
   setTimeout(() => {
-    document.addEventListener('click', closeReactionPicker, { once: true });
+    const handler = (e) => {
+      if (activeReactionPicker && !activeReactionPicker.contains(e.target) && !e.target.closest('.msg-react-btn')) {
+        activeReactionPicker.remove();
+        activeReactionPicker = null;
+        document.removeEventListener('click', handler);
+      }
+    };
+    document.addEventListener('click', handler);
   }, 0);
-}
-
-function closeReactionPicker(e) {
-  if (activeReactionPicker && !activeReactionPicker.contains(e.target)) {
-    activeReactionPicker.remove();
-    activeReactionPicker = null;
-  }
 }
 
 async function openGroupChat(groupId, title) {
@@ -920,12 +922,35 @@ function updateMediaPreview() {
   }
 }
 
+// Show/hide sending indicator
+function showSendingIndicator() {
+  let el = document.querySelector('#sending-indicator');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sending-indicator';
+    el.className = 'sending-indicator';
+    el.innerHTML = '<div class="spinner"></div><span>Отправка...</span>';
+    document.body.appendChild(el);
+  }
+  el.classList.remove('hidden');
+  // Disable send button
+  if (btnSendMessage) btnSendMessage.disabled = true;
+}
+
+function hideSendingIndicator() {
+  const el = document.querySelector('#sending-indicator');
+  if (el) el.classList.add('hidden');
+  if (btnSendMessage) btnSendMessage.disabled = false;
+}
+
 async function sendMessage() {
   try {
     if (!currentChat) return;
     const text = messageText.value.trim();
-    const hasMedia = pendingMedia?.data;
+    const hasMedia = pendingMedia?.data || false;
     if (!text && !hasMedia) return;
+    
+    showSendingIndicator();
 
     const body = {
       text: text || '',
@@ -945,6 +970,7 @@ async function sendMessage() {
     messageText.value = '';
     pendingMedia = null;
     updateMediaPreview();
+    hideSendingIndicator();
     if (currentChatType === 'group') {
       await openGroupChat(currentGroupId);
     } else {
@@ -952,6 +978,7 @@ async function sendMessage() {
     }
     playMessageSound();
   } catch (error) {
+    hideSendingIndicator();
     setStatus(error.message);
   }
 }
@@ -1039,8 +1066,8 @@ async function saveSettings(partial) {
   setStatus(t('settings_saved'));
 }
 
-// ========== AVATAR UPLOAD WITH CROPPING ==========
-let avatarCropState = null; // { file, dataUrl, image, crop }
+// ========== AVATAR UPLOAD WITH INTERACTIVE CROPPING ==========
+let avatarCropState = null; // { file, dataUrl, image, cropX, cropY, cropSize }
 
 function openAvatarCropModal() {
   const input = document.createElement('input');
@@ -1054,7 +1081,13 @@ function openAvatarCropModal() {
     const dataUrl = await readFileAsDataURL(file);
     const img = new Image();
     img.onload = () => {
-      avatarCropState = { file, dataUrl, image: img };
+      const minDim = Math.min(img.width, img.height);
+      avatarCropState = { 
+        file, dataUrl, image: img, 
+        cropX: (img.width - minDim) / 2, 
+        cropY: (img.height - minDim) / 2, 
+        cropSize: minDim 
+      };
       renderAvatarCropUI();
     };
     img.src = dataUrl;
@@ -1071,27 +1104,187 @@ function renderAvatarCropUI() {
   const container = modal.querySelector('#avatar-crop-container');
   const preview = modal.querySelector('#avatar-crop-preview');
   
-  // Use canvas to create a cropped preview
-  const cropSize = Math.min(state.image.width, state.image.height, 400);
-  const canvas = document.createElement('canvas');
-  canvas.width = cropSize;
-  canvas.height = cropSize;
-  const ctx = canvas.getContext('2d');
+  // Create interactive crop container with draggable overlay
+  container.innerHTML = `
+    <div class="avatar-crop-wrapper" style="position:relative;display:inline-block;max-width:100%;overflow:hidden;border-radius:8px;">
+      <img src="${state.dataUrl}" id="avatar-crop-image" style="max-width:100%;max-height:50vh;display:block;user-select:none;-webkit-user-drag:none;">
+      <div class="avatar-crop-overlay" style="position:absolute;inset:0;background:rgba(0,0,0,0.5);"></div>
+      <div class="avatar-crop-box" id="avatar-crop-box" style="position:absolute;border:2px solid #8b5cf6;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);cursor:move;border-radius:50%;"></div>
+      <div class="avatar-crop-handle" style="position:absolute;bottom:-8px;right:-8px;width:16px;height:16px;background:#8b5cf6;border:2px solid #fff;border-radius:50%;cursor:nwse-resize;z-index:5;"></div>
+    </div>
+  `;
   
-  // Center crop
-  const sx = (state.image.width - cropSize) / 2;
-  const sy = (state.image.height - cropSize) / 2;
-  ctx.drawImage(state.image, sx, sy, cropSize, cropSize, 0, 0, cropSize, cropSize);
-  
-  const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-  
-  container.innerHTML = `<img src="${state.dataUrl}" style="max-width:100%;max-height:50vh;object-fit:contain;">`;
-  preview.innerHTML = `<img src="${croppedDataUrl}" class="avatar-preview-img">`;
+  preview.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Предпросмотр (круг)</p><div id="avatar-crop-preview-img"><img src="" class="avatar-preview-img"></div>';
   
   modal.classList.remove('hidden');
   
-  // Store the cropped data for saving
-  state.croppedDataUrl = croppedDataUrl;
+  // Setup drag interaction after DOM update
+  setTimeout(() => setupAvatarCropDrag(), 50);
+}
+
+function setupAvatarCropDrag() {
+  const wrapper = document.querySelector('.avatar-crop-wrapper');
+  const img = document.querySelector('#avatar-crop-image');
+  const box = document.querySelector('#avatar-crop-box');
+  const previewImg = document.querySelector('#avatar-crop-preview-img .avatar-preview-img');
+  if (!wrapper || !img || !box) return;
+  
+  const state = avatarCropState;
+  if (!state) return;
+  
+  // Calculate scale factor between natural image size and displayed size
+  const getScale = () => {
+    const rect = img.getBoundingClientRect();
+    return { 
+      scaleX: state.image.width / rect.width, 
+      scaleY: state.image.height / rect.height 
+    };
+  };
+  
+  const updateCropPreview = () => {
+    const scale = getScale();
+    const boxRect = box.getBoundingClientRect();
+    const imgRect = img.getBoundingClientRect();
+    
+    // Calculate crop coordinates in natural image space
+    const relX = (boxRect.left - imgRect.left) * scale.scaleX;
+    const relY = (boxRect.top - imgRect.top) * scale.scaleY;
+    const cropW = boxRect.width * scale.scaleX;
+    const cropH = boxRect.height * scale.scaleY;
+    
+    // Update state
+    state.cropX = relX;
+    state.cropY = relY;
+    state.cropSize = Math.min(cropW, cropH);
+    
+    // Generate cropped image
+    const canvas = document.createElement('canvas');
+    const outSize = Math.min(cropW, cropH, 400);
+    canvas.width = outSize;
+    canvas.height = outSize;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(state.image, relX, relY, outSize, outSize, 0, 0, outSize, outSize);
+    
+    const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    state.croppedDataUrl = croppedDataUrl;
+    
+    if (previewImg) previewImg.src = croppedDataUrl;
+  };
+  
+  // Set initial box size and position (centered square)
+  const imgRect = img.getBoundingClientRect();
+  const minDim = Math.min(imgRect.width, imgRect.height);
+  const boxSize = Math.min(minDim, 250);
+  box.style.width = boxSize + 'px';
+  box.style.height = boxSize + 'px';
+  box.style.left = ((imgRect.width - boxSize) / 2) + 'px';
+  box.style.top = ((imgRect.height - boxSize) / 2) + 'px';
+  
+  updateCropPreview();
+  
+  // Draggable box
+  let isDragging = false;
+  let isResizing = false;
+  let startX, startY, startLeft, startTop, startSize;
+  
+  const onMouseDown = (e) => {
+    if (e.target.closest('.avatar-crop-handle')) {
+      // Resize
+      isResizing = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startSize = parseInt(box.style.width);
+      e.preventDefault();
+    } else if (e.target === box || e.target.closest('.avatar-crop-box')) {
+      // Move
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startLeft = parseInt(box.style.left);
+      startTop = parseInt(box.style.top);
+      e.preventDefault();
+    }
+  };
+  
+  const onMouseMove = (e) => {
+    if (isDragging) {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      let newLeft = Math.max(0, Math.min(imgRect.width - parseInt(box.style.width), startLeft + dx));
+      let newTop = Math.max(0, Math.min(imgRect.height - parseInt(box.style.height), startTop + dy));
+      box.style.left = newLeft + 'px';
+      box.style.top = newTop + 'px';
+      updateCropPreview();
+    }
+    if (isResizing) {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const newSize = Math.max(40, Math.min(imgRect.width, imgRect.height, startSize + Math.max(dx, dy)));
+      // Keep box within image bounds
+      const left = parseInt(box.style.left);
+      const top = parseInt(box.style.top);
+      const clampedSize = Math.min(newSize, imgRect.width - left, imgRect.height - top);
+      box.style.width = clampedSize + 'px';
+      box.style.height = clampedSize + 'px';
+      updateCropPreview();
+    }
+  };
+  
+  const onMouseUp = () => {
+    isDragging = false;
+    isResizing = false;
+  };
+  
+  wrapper.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+  
+  // Touch support
+  const onTouchStart = (e) => {
+    const touch = e.touches[0];
+    if (e.target.closest('.avatar-crop-handle')) {
+      isResizing = true;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      startSize = parseInt(box.style.width);
+      e.preventDefault();
+    } else if (e.target === box || e.target.closest('.avatar-crop-box')) {
+      isDragging = true;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      startLeft = parseInt(box.style.left);
+      startTop = parseInt(box.style.top);
+      e.preventDefault();
+    }
+  };
+  
+  const onTouchMove = (e) => {
+    const touch = e.touches[0];
+    if (isDragging) {
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      let newLeft = Math.max(0, Math.min(imgRect.width - parseInt(box.style.width), startLeft + dx));
+      let newTop = Math.max(0, Math.min(imgRect.height - parseInt(box.style.height), startTop + dy));
+      box.style.left = newLeft + 'px';
+      box.style.top = newTop + 'px';
+      updateCropPreview();
+    }
+    if (isResizing) {
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      const newSize = Math.max(40, Math.min(imgRect.width, imgRect.height, startSize + Math.max(dx, dy)));
+      const left = parseInt(box.style.left);
+      const top = parseInt(box.style.top);
+      const clampedSize = Math.min(newSize, imgRect.width - left, imgRect.height - top);
+      box.style.width = clampedSize + 'px';
+      box.style.height = clampedSize + 'px';
+      updateCropPreview();
+    }
+  };
+  
+  wrapper.addEventListener('touchstart', onTouchStart, { passive: false });
+  document.addEventListener('touchmove', onTouchMove, { passive: false });
+  document.addEventListener('touchend', onMouseUp);
 }
 
 async function saveAvatar() {
