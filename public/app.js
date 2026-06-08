@@ -165,10 +165,16 @@ async function loadUser() {
 function renderPost(post) {
   const card = document.createElement('article');
   card.className = 'post-card';
+  const avatarHtml = post.avatarImage 
+    ? `<img src="${post.avatarImage}" class="post-avatar-img" alt="">` 
+    : `<span class="post-avatar-emoji">${post.avatar}</span>`;
   card.innerHTML = `
     <div class="post-body">
       <div class="post-meta">
-        <strong>${post.avatar} @${post.author}</strong>
+        <div class="post-author-row">
+          ${avatarHtml}
+          <strong>@${post.author}</strong>
+        </div>
         <small>${new Date(post.timestamp).toLocaleString('ru-RU')}</small>
       </div>
       <p>${post.text}</p>
@@ -472,7 +478,6 @@ document.querySelector('#btn-media-preview-confirm')?.addEventListener('click', 
   closeMediaPreviewModal({ confirmed: true, caption: captionEl?.value || '' });
 });
 
-
 async function loadContacts() {
   try {
     const data = await request('/api/messages');
@@ -513,9 +518,12 @@ async function loadContacts() {
 function renderSearchUserItem(user, container, { compact = false } = {}) {
   const item = document.createElement('div');
   item.className = compact ? 'search-result-item' : 'contact-item';
+  const avatarHtml = user.avatarImage 
+    ? `<img src="${user.avatarImage}" class="contact-avatar-img" alt="">` 
+    : `<span class="contact-avatar-emoji">${user.avatar || '👤'}</span>`;
   item.innerHTML = `
     <div class="contact-info" style="flex:1">
-      <div class="contact-avatar">${user.avatar || '👤'}</div>
+      <div class="contact-avatar">${avatarHtml}</div>
       <div class="contact-text">
         <strong>@${user.username}</strong>
         <small>${user.profileVisible === false ? t('profile_hidden') : user.bio}</small>
@@ -624,11 +632,183 @@ async function openDmChat(username) {
   const data = await request(`/api/chat/dm/${encodeURIComponent(currentChat)}`);
   renderChatMessages(data.messages);
   if (chatHeader) {
-    chatHeader.innerHTML = `<strong>@${data.withUser}</strong> <button type="button" class="btn-sm btn-primary" id="chat-profile-btn">Профиль</button>`;
+    chatHeader.innerHTML = `
+      <strong>@${data.withUser}</strong>
+      <div class="chat-header-actions">
+        <button type="button" class="btn-sm btn-primary" id="chat-profile-btn">${t('view_profile')}</button>
+        <button type="button" class="btn-sm btn-danger" id="chat-delete-btn" title="${t('delete_chat')}">🗑</button>
+      </div>
+    `;
     document.querySelector('#chat-profile-btn')?.addEventListener('click', () => openUserProfile(data.withUser));
+    document.querySelector('#chat-delete-btn')?.addEventListener('click', () => deleteChat(data.withUser));
   }
   contactsList.classList.add('hidden');
   chatArea.classList.remove('hidden');
+}
+
+async function deleteChat(username) {
+  const msg = t('delete_chat_confirm').replace('{user}', username);
+  if (!confirm(msg)) return;
+  try {
+    await request(`/api/chat/${encodeURIComponent(username)}`, { method: 'DELETE' });
+    setStatus('Переписка удалена');
+    backToContacts.click();
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function deleteMessage(msgId) {
+  if (!confirm(t('delete_message_confirm'))) return;
+  try {
+    await request(`/api/messages/${msgId}`, { method: 'DELETE' });
+    if (currentChatType === 'group') {
+      await openGroupChat(currentGroupId);
+    } else {
+      await openDmChat(currentChat);
+    }
+    setStatus(t('message_deleted'));
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function reactToMessage(msgId, emoji) {
+  try {
+    await request(`/api/messages/${msgId}/react`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji })
+    });
+    if (currentChatType === 'group') {
+      await openGroupChat(currentGroupId);
+    } else {
+      await openDmChat(currentChat);
+    }
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+// Available reactions (like Telegram)
+const AVAILABLE_REACTIONS = ['❤️', '👍', '👎', '😂', '😮', '😢', '😡', '🎉'];
+
+function getReactionsString(reactions) {
+  if (!reactions || Object.keys(reactions).length === 0) return '';
+  return Object.entries(reactions)
+    .map(([emoji, users]) => {
+      const count = users.length;
+      return `<span class="msg-reaction" data-reaction="${emoji}">${emoji} ${count}</span>`;
+    })
+    .join('');
+}
+
+function renderChatMessages(messages, isGroup = false) {
+  chatMessages.innerHTML = '';
+  messages.forEach(msg => {
+    const msgEl = document.createElement('div');
+    const mine = msg.from === currentUser;
+    msgEl.className = `message ${mine ? 'sent' : 'received'}`;
+    
+    // Message deleted state
+    if (msg.deleted) {
+      msgEl.innerHTML = '<em style="opacity:0.5;font-style:italic;">' + t('message_deleted') + '</em>';
+      chatMessages.appendChild(msgEl);
+      return;
+    }
+    
+    let content = '';
+    if (isGroup && !mine) {
+      content += `<small>@${msg.from}</small><br>`;
+    }
+    if (msg.text) {
+      content += escapeHtml(msg.text);
+    }
+    if (msg.media && msg.mediaType === 'image') {
+      content += `<br><img src="${msg.media}" class="msg-media photo-clickable" loading="lazy">`;
+    }
+    if (msg.media && msg.mediaType === 'video') {
+      content += `<br><video src="${msg.media}" class="msg-video-bubble" controls playsinline></video>`;
+    }
+    if (msg.voice) {
+      content += `<br><audio src="${msg.voice}" class="msg-voice" controls></audio>`;
+    }
+    
+    // Reactions row
+    const reactionsStr = getReactionsString(msg.reactions);
+    if (reactionsStr) {
+      content += `<div class="msg-reactions-row">${reactionsStr}</div>`;
+    }
+    
+    // Actions row (delete + reactions for own messages, reactions for received)
+    content += `<div class="msg-actions-row">`;
+    if (mine) {
+      content += `<button class="msg-action-btn msg-delete-btn" data-id="${msg.id}" title="${t('delete_message')}">🗑</button>`;
+    }
+    content += `<button class="msg-action-btn msg-react-btn" data-id="${msg.id}" title="${t('reaction_add')}">😊</button>`;
+    content += `</div>`;
+    
+    msgEl.innerHTML = content || '(пусто)';
+    
+    // Event listeners
+    msgEl.querySelectorAll('.photo-clickable').forEach(img => {
+      img.addEventListener('click', () => openPhotoFullscreen(img.src));
+    });
+    msgEl.querySelector('.msg-delete-btn')?.addEventListener('click', () => deleteMessage(msg.id));
+    msgEl.querySelector('.msg-react-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showReactionPicker(msg.id, msgEl);
+    });
+    msgEl.querySelectorAll('.msg-reaction').forEach(el => {
+      el.addEventListener('click', () => {
+        const emoji = el.dataset.reaction;
+        reactToMessage(msg.id, emoji);
+      });
+    });
+
+    chatMessages.appendChild(msgEl);
+  });
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Reaction picker
+let activeReactionPicker = null;
+
+function showReactionPicker(msgId, msgEl) {
+  // Remove existing picker
+  if (activeReactionPicker) {
+    activeReactionPicker.remove();
+    activeReactionPicker = null;
+  }
+  
+  const picker = document.createElement('div');
+  picker.className = 'reaction-picker';
+  picker.innerHTML = AVAILABLE_REACTIONS.map(emoji => 
+    `<button type="button" class="reaction-picker-btn" data-emoji="${emoji}">${emoji}</button>`
+  ).join('');
+  
+  msgEl.appendChild(picker);
+  activeReactionPicker = picker;
+  
+  picker.querySelectorAll('.reaction-picker-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const emoji = btn.dataset.emoji;
+      reactToMessage(msgId, emoji);
+      picker.remove();
+      activeReactionPicker = null;
+    });
+  });
+  
+  // Close on click outside
+  setTimeout(() => {
+    document.addEventListener('click', closeReactionPicker, { once: true });
+  }, 0);
+}
+
+function closeReactionPicker(e) {
+  if (activeReactionPicker && !activeReactionPicker.contains(e.target)) {
+    activeReactionPicker.remove();
+    activeReactionPicker = null;
+  }
 }
 
 async function openGroupChat(groupId, title) {
@@ -642,40 +822,6 @@ async function openGroupChat(groupId, title) {
   }
   contactsList.classList.add('hidden');
   chatArea.classList.remove('hidden');
-}
-
-function renderChatMessages(messages, isGroup = false) {
-  chatMessages.innerHTML = '';
-  messages.forEach(msg => {
-    const msgEl = document.createElement('div');
-    const mine = msg.from === currentUser;
-    msgEl.className = `message ${mine ? 'sent' : 'received'}`;
-    let content = '';
-    if (isGroup && !mine) {
-      content += `<small>@${msg.from}</small><br>`;
-    }
-    if (msg.text) {
-      content += escapeHtml(msg.text);
-    }
-    if (msg.media && msg.mediaType === 'image') {
-      content += `<br><img src="${msg.media}" class="msg-media photo-clickable" loading="lazy">`;
-    }
-    if (msg.media && msg.mediaType === 'video') {
-      // Видеосообщение — кружок (как в Telegram)
-      content += `<br><video src="${msg.media}" class="msg-video-bubble" controls playsinline></video>`;
-    }
-    if (msg.voice) {
-      content += `<br><audio src="${msg.voice}" class="msg-voice" controls></audio>`;
-    }
-    msgEl.innerHTML = content || '(пусто)';
-
-    chatMessages.appendChild(msgEl);
-  });
-  // Клик по фото — полноэкранный просмотр
-  chatMessages.querySelectorAll('.photo-clickable').forEach(img => {
-    img.addEventListener('click', () => openPhotoFullscreen(img.src));
-  });
-  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 function openPhotoFullscreen(src) {
@@ -813,9 +959,12 @@ async function sendMessage() {
 async function openUserProfile(username) {
   try {
     const data = await request(`/api/users/${encodeURIComponent(username)}/profile`);
+    const avatarHtml = data.avatarImage 
+      ? `<img src="${data.avatarImage}" class="profile-avatar-img" alt="">` 
+      : `<div style="font-size:3rem">${data.avatar || '👤'}</div>`;
     userProfileContent.innerHTML = `
       <div class="user-profile-view">
-        <div style="font-size:3rem">${data.avatar || '👤'}</div>
+        ${avatarHtml}
         <div class="handle-badge">@${data.username}</div>
         <p>${data.profileVisible === false ? t('profile_hidden') : data.bio}</p>
         ${data.profileVisible !== false ? `
@@ -831,7 +980,13 @@ async function openUserProfile(username) {
             <button type="button" class="btn-primary" id="modal-follow-btn">${data.isFollowing ? t('following') : t('follow')}</button>
           ` : ''}
           ${data.canMessage ? `<button type="button" class="btn-primary" id="modal-chat-btn">${t('write_message')}</button>` : ''}
+          ${data.username !== currentUser ? `
+            <button type="button" class="btn-${data.isBlacklisted ? 'success' : 'danger'}" id="modal-blacklist-btn">
+              ${data.isBlacklisted ? t('blacklist_remove') : t('blacklist_add')}
+            </button>
+          ` : ''}
         </div>
+        ${data.isBlacklisted ? `<p style="color:#ef4444;font-size:0.85rem;">${t('blacklisted_by')}</p>` : ''}
       </div>
     `;
     document.querySelector('#modal-follow-btn')?.addEventListener('click', async (e) => {
@@ -842,6 +997,15 @@ async function openUserProfile(username) {
       userProfileModal.classList.add('hidden');
       showSection('messages');
       startDmChat(data.username);
+    });
+    document.querySelector('#modal-blacklist-btn')?.addEventListener('click', async () => {
+      try {
+        const result = await request(`/api/users/${encodeURIComponent(data.username)}/blacklist`, { method: 'POST' });
+        setStatus(result.message);
+        openUserProfile(data.username);
+      } catch (error) {
+        setStatus(error.message);
+      }
     });
     userProfileModal.classList.remove('hidden');
   } catch (error) {
@@ -873,6 +1037,78 @@ async function saveSettings(partial) {
   applyLanguage(appSettings.language);
   localStorage.setItem('dio_theme', appSettings.theme);
   setStatus(t('settings_saved'));
+}
+
+// ========== AVATAR UPLOAD WITH CROPPING ==========
+let avatarCropState = null; // { file, dataUrl, image, crop }
+
+function openAvatarCropModal() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.click();
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    
+    const dataUrl = await readFileAsDataURL(file);
+    const img = new Image();
+    img.onload = () => {
+      avatarCropState = { file, dataUrl, image: img };
+      renderAvatarCropUI();
+    };
+    img.src = dataUrl;
+  });
+}
+
+function renderAvatarCropUI() {
+  const modal = document.querySelector('#avatar-crop-modal');
+  if (!modal) return;
+  
+  const state = avatarCropState;
+  if (!state) return;
+  
+  const container = modal.querySelector('#avatar-crop-container');
+  const preview = modal.querySelector('#avatar-crop-preview');
+  
+  // Use canvas to create a cropped preview
+  const cropSize = Math.min(state.image.width, state.image.height, 400);
+  const canvas = document.createElement('canvas');
+  canvas.width = cropSize;
+  canvas.height = cropSize;
+  const ctx = canvas.getContext('2d');
+  
+  // Center crop
+  const sx = (state.image.width - cropSize) / 2;
+  const sy = (state.image.height - cropSize) / 2;
+  ctx.drawImage(state.image, sx, sy, cropSize, cropSize, 0, 0, cropSize, cropSize);
+  
+  const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  
+  container.innerHTML = `<img src="${state.dataUrl}" style="max-width:100%;max-height:50vh;object-fit:contain;">`;
+  preview.innerHTML = `<img src="${croppedDataUrl}" class="avatar-preview-img">`;
+  
+  modal.classList.remove('hidden');
+  
+  // Store the cropped data for saving
+  state.croppedDataUrl = croppedDataUrl;
+}
+
+async function saveAvatar() {
+  if (!avatarCropState?.croppedDataUrl) return;
+  
+  try {
+    const result = await request('/api/profile/avatar', {
+      method: 'POST',
+      body: JSON.stringify({ avatarImage: avatarCropState.croppedDataUrl })
+    });
+    setStatus(t('avatar_saved'));
+    document.querySelector('#avatar-crop-modal')?.classList.add('hidden');
+    avatarCropState = null;
+    loadProfile();
+  } catch (error) {
+    setStatus(error.message);
+  }
 }
 
 function renderSettingsUI() {
@@ -964,12 +1200,25 @@ function renderSettingsUI() {
         <textarea id="set-bio" rows="3" maxlength="200"></textarea>
         <button type="button" class="btn-primary" id="btn-save-bio">${t('save')}</button>
       </div>
+      
+      <div class="settings-group">
+        <h3 style="margin:0 0 8px;font-size:1rem;">${t('avatar_edit')}</h3>
+        <p class="settings-hint">${t('avatar_upload_hint')}</p>
+        <button type="button" class="btn-primary" id="btn-set-avatar">${t('set_avatar')}</button>
+      </div>
+      
+      <div class="settings-group">
+        <h3 style="margin:0 0 8px;font-size:1rem;">${t('blacklist_title')}</h3>
+        <div id="blacklist-container"></div>
+      </div>
     </div>
   `;
 
   bindSettingsToggles();
   loadAccountStats();
   loadAccountEmail();
+  loadBlacklist();
+  
   request('/api/profile').then(p => {
     const bioEl = document.querySelector('#set-bio');
     if (bioEl) bioEl.value = p.bio || '';
@@ -994,6 +1243,9 @@ function renderSettingsUI() {
     applyTheme(theme);
     saveSettings({ theme });
   });
+
+  // Avatar button
+  document.querySelector('#btn-set-avatar')?.addEventListener('click', openAvatarCropModal);
 
   let usernameCheckTimer = null;
   const usernameInput = document.querySelector('#set-username');
@@ -1103,6 +1355,45 @@ function renderSettingsUI() {
   });
 }
 
+async function loadBlacklist() {
+  try {
+    const data = await request('/api/blacklist');
+    const container = document.querySelector('#blacklist-container');
+    if (!container) return;
+    
+    if (!data.users || data.users.length === 0) {
+      container.innerHTML = `<p class="settings-hint">${t('blacklist_empty')}</p>`;
+      return;
+    }
+    
+    container.innerHTML = data.users.map(u => {
+      const avatarHtml = u.avatarImage 
+        ? `<img src="${u.avatarImage}" class="mini-avatar" alt="">` 
+        : `<span>${u.avatar || '👤'}</span>`;
+      return `
+        <div class="blacklist-item">
+          <span>${avatarHtml} @${u.username}</span>
+          <button type="button" class="btn-sm btn-primary" data-username="${u.username}" data-action="unblock">${t('blacklist_remove')}</button>
+        </div>
+      `;
+    }).join('');
+    
+    container.querySelectorAll('[data-action="unblock"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await request(`/api/users/${encodeURIComponent(btn.dataset.username)}/blacklist`, { method: 'POST' });
+          loadBlacklist();
+          setStatus('Пользователь разблокирован');
+        } catch (error) {
+          setStatus(error.message);
+        }
+      });
+    });
+  } catch (error) {
+    console.error('Blacklist load error:', error);
+  }
+}
+
 async function loadAccountEmail() {
   try {
     const data = await request('/api/settings');
@@ -1193,11 +1484,14 @@ async function loadProfile() {
   try {
     const data = await request('/api/profile');
     appSettings = data.settings || appSettings;
+    const avatarHtml = data.avatarImage 
+      ? `<img src="${data.avatarImage}" class="profile-avatar-img" alt="">` 
+      : `<div style="font-size: 3rem; margin-bottom: 12px;">${data.avatar}</div>`;
     profileContainer.innerHTML = `
       <div class="profile-card">
         <div class="header">
           <div>
-            <div style="font-size: 3rem; margin-bottom: 12px;">${data.avatar}</div>
+            ${avatarHtml}
             <strong class="handle-badge">@${data.username}</strong>
             <p>${data.bio}</p>
           </div>

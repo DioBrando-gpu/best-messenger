@@ -58,7 +58,26 @@ window.DIO_I18N = {
     followers: 'подписчиков',
     following_count: 'подписок',
     logout: 'Выйти',
-    back: 'Назад'
+    back: 'Назад',
+    // New keys
+    delete_chat: 'Удалить переписку',
+    delete_chat_confirm: 'Удалить всю переписку с @{user}?',
+    delete_message: 'Удалить сообщение',
+    delete_message_confirm: 'Удалить это сообщение?',
+    blacklist_add: 'Заблокировать',
+    blacklist_remove: 'Разблокировать',
+    blacklist_title: 'Чёрный список',
+    blacklist_empty: 'Нет заблокированных пользователей',
+    blacklisted_by: 'Этот пользователь добавил вас в чёрный список',
+    set_avatar: 'Установить аватар',
+    avatar_edit: 'Редактировать аватар',
+    avatar_crop: 'Кадрирование',
+    avatar_upload_hint: 'Выберите изображение для аватара',
+    avatar_saved: 'Аватар сохранён',
+    reaction_add: 'Реакция',
+    sent: 'отправлено',
+    read: 'прочитано',
+    message_deleted: 'Сообщение удалено'
   },
   en: {
     nav_feed: 'Home',
@@ -119,7 +138,26 @@ window.DIO_I18N = {
     followers: 'followers',
     following_count: 'following',
     logout: 'Log out',
-    back: 'Back'
+    back: 'Back',
+    // New keys
+    delete_chat: 'Delete conversation',
+    delete_chat_confirm: 'Delete entire conversation with @{user}?',
+    delete_message: 'Delete message',
+    delete_message_confirm: 'Delete this message?',
+    blacklist_add: 'Block',
+    blacklist_remove: 'Unblock',
+    blacklist_title: 'Blacklist',
+    blacklist_empty: 'No blocked users',
+    blacklisted_by: 'This user has blocked you',
+    set_avatar: 'Set avatar',
+    avatar_edit: 'Edit avatar',
+    avatar_crop: 'Crop',
+    avatar_upload_hint: 'Select an image for your avatar',
+    avatar_saved: 'Avatar saved',
+    reaction_add: 'React',
+    sent: 'sent',
+    read: 'read',
+    message_deleted: 'Message deleted'
   }
 };
 

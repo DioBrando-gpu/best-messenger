@@ -8,7 +8,7 @@ let standLoading = false;
 // Скрытый input для выбора видео
 const standFileInput = document.createElement('input');
 standFileInput.type = 'file';
-standFileInput.accept = 'video/*';
+standFileInput.accept = 'video/*,image/*';
 standFileInput.style.display = 'none';
 document.body.appendChild(standFileInput);
 
@@ -43,7 +43,7 @@ function renderStandSlide(stand) {
   slide.className = 'stand-slide';
   slide.dataset.id = stand.id;
   slide.innerHTML = `
-    <video class="stand-video" src="${stand.video}" loop playsinline muted></video>
+    <video class="stand-video" src="${stand.video}" loop playsinline muted preload="metadata"></video>
     <div class="stand-overlay">
       <div class="stand-side-actions">
         <button type="button" class="stand-action like-btn" data-id="${stand.id}">❤<span>${stand.likes?.length || 0}</span></button>
@@ -69,16 +69,18 @@ function renderStandSlide(stand) {
   slide.querySelector('.repost-btn')?.addEventListener('click', () => standRepost(stand.id));
   slide.querySelector('.delete-stand-btn')?.addEventListener('click', () => standDelete(stand.id, slide));
 
-  // Автоплей при попадании в зону видимости
+  // Автоплей при попадании в зону видимости - улучшенная версия
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
         video.play().catch(() => {});
       } else {
         video.pause();
+        video.removeAttribute('src');
+        video.load();
       }
     });
-  }, { threshold: 0.6 });
+  }, { threshold: 0.5 });
   observer.observe(slide);
 
   return slide;
@@ -157,19 +159,38 @@ function initStandObserver() {
 
 // ========== ЗАГРУЗКА ВИДЕО (через FAB) ==========
 
-// При клике на FAB (+) — открываем галерею
+// При клике на FAB (+) — открываем галерею с опцией сжатия
 standFab?.addEventListener('click', () => {
   standFileInput.click();
 });
 
-// Когда видео выбрано — сразу загружаем
+// Функция сжатия видео перед отправкой
+async function compressVideo(file, maxBytes = 100 * 1024 * 1024) {
+  // Если файл меньше лимита, просто читаем как есть
+  if (file.size <= maxBytes) {
+    return await readFileAsDataURL(file);
+  }
+  
+  // Для больших файлов пытаемся уменьшить качество
+  // Используем canvas для создания превью если это изображение
+  if (file.type.startsWith('image/')) {
+    return await compressMedia(file, 'image');
+  }
+  
+  // Для видео просто читаем и надеемся что сервер примет
+  // В будущем можно добавить сжатие через FFmpeg.wasm
+  setStatus('Видео большого размера, загрузка может быть долгой...');
+  return await readFileAsDataURL(file);
+}
+
+// Когда файл выбран — загружаем с проверкой размера
 standFileInput.addEventListener('change', async () => {
   const file = standFileInput.files?.[0];
   if (!file) return;
 
-  // Проверка размера до 25 МБ
-  if (file.size > 25 * 1024 * 1024) {
-    setStatus('Видео до 25 МБ');
+  const MAX_SIZE = 100 * 1024 * 1024;
+  if (file.size > MAX_SIZE) {
+    setStatus('Файл слишком большой (макс. 100 МБ)');
     standFileInput.value = '';
     return;
   }

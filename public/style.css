@@ -1646,3 +1646,279 @@ body.on-stand .stand-fab {
     font-size: 0.85rem;
   }
 }
+
+/* ========== NEW FEATURES - Reactions, Delete, Blacklist, Avatar ========== */
+
+/* Reactions in messages */
+.msg-reactions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.msg-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(139,92,246,.15);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background .2s;
+  user-select: none;
+}
+
+.msg-reaction:hover {
+  background: rgba(139,92,246,.3);
+}
+
+.message.received .msg-reactions-row {
+  border-top-color: rgba(255,255,255,.08);
+}
+
+.message.sent .msg-reactions-row {
+  border-top-color: rgba(255,255,255,.2);
+}
+
+.message.sent .msg-reaction {
+  background: rgba(255,255,255,.15);
+}
+
+/* Message action buttons */
+.msg-actions-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity .2s;
+}
+
+.message:hover .msg-actions-row {
+  opacity: 1;
+}
+
+.msg-action-btn {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.1);
+  color: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border: none;
+  transition: background .2s;
+}
+
+.msg-action-btn:hover {
+  background: rgba(139,92,246,.3);
+}
+
+/* Reaction picker */
+.reaction-picker {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0,0,0,.3);
+  margin-top: 4px;
+  animation: react-appear .15s ease;
+  z-index: 10;
+}
+
+@keyframes react-appear {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.reaction-picker-btn {
+  padding: 4px 6px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: transform .15s;
+}
+
+.reaction-picker-btn:hover {
+  transform: scale(1.3);
+}
+
+/* Chat header actions */
+.chat-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-danger {
+  background: rgba(220,38,38,.15);
+  color: #ef4444;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(220,38,38,.2);
+  cursor: pointer;
+  transition: background .2s;
+}
+
+.btn-danger:hover {
+  background: rgba(220,38,38,.25);
+}
+
+.btn-success {
+  background: rgba(34,197,94,.15);
+  color: #22c55e;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(34,197,94,.2);
+  cursor: pointer;
+  transition: background .2s;
+}
+
+.btn-success:hover {
+  background: rgba(34,197,94,.25);
+}
+
+/* Blacklist UI */
+.blacklist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.blacklist-item:last-child {
+  border-bottom: none;
+}
+
+.blacklist-item span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.mini-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Profile avatar images */
+.profile-avatar-img {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: 12px;
+  border: 3px solid var(--accent);
+}
+
+.user-profile-view .profile-avatar-img {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 0 auto 12px;
+  border: 3px solid var(--accent);
+}
+
+/* Avatar in posts */
+.post-avatar-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.post-avatar-emoji {
+  font-size: 1.4rem;
+}
+
+.post-author-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Contact avatar images */
+.contact-avatar-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.contact-avatar-emoji {
+  font-size: 1.4rem;
+}
+
+/* Avatar crop preview */
+.avatar-preview-img {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--accent);
+}
+
+/* Touch-friendly improvements for mobile */
+@media (max-width: 600px) {
+  .msg-actions-row {
+    opacity: 1;
+  }
+  .reaction-picker {
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 4px 8px;
+  }
+  .reaction-picker-btn {
+    font-size: 1rem;
+    padding: 4px;
+  }
+  .chat-header-actions {
+    gap: 4px;
+  }
+  .btn-danger {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+  .profile-avatar-img {
+    width: 56px;
+    height: 56px;
+  }
+  .user-profile-view .profile-avatar-img {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+/* Make messages more performant on mobile - use will-change sparingly */
+@media (max-width: 900px) {
+  .chat-messages {
+    contain: content;
+  }
+  .message {
+    contain: content;
+  }
+}
+
+/* Better video preload for stand */
+.stand-video[preload="metadata"] {
+  background: #000;
+}
+
+/* Improve touch interactions */
+button, 
+.contact-item,
+.reaction-picker-btn,
+.msg-action-btn {
+  touch-action: manipulation;
+}

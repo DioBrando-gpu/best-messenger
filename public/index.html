@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>DIO - Messenger</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -128,7 +128,7 @@
     </div>
   </div>
 
-  <!-- Универсальный предпросмотр медиа (для поста / stand / записи аудио-видео) -->
+  <!-- Универсальный предпросмотр медиа -->
   <div id="media-preview-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-backdrop" data-close-media-preview></div>
     <div class="modal-card card media-preview-card">
@@ -139,6 +139,23 @@
       <div class="media-preview-actions">
         <button type="button" class="btn-primary" data-close-media-preview>Отмена</button>
         <button type="button" class="btn-primary" id="btn-media-preview-confirm">Готово</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка кадрирования аватара -->
+  <div id="avatar-crop-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" onclick="document.querySelector('#avatar-crop-modal').classList.add('hidden')"></div>
+    <div class="modal-card card">
+      <button type="button" class="modal-close" onclick="document.querySelector('#avatar-crop-modal').classList.add('hidden')">×</button>
+      <h3 id="avatar-crop-title">Кадрирование аватара</h3>
+      <div id="avatar-crop-container" style="text-align:center;margin-bottom:12px;"></div>
+      <div id="avatar-crop-preview" style="text-align:center;margin-bottom:12px;">
+        <p style="color:var(--text-muted);font-size:0.85rem;">Предпросмотр (круг)</p>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button type="button" class="btn-primary" onclick="document.querySelector('#avatar-crop-modal').classList.add('hidden')">Отмена</button>
+        <button type="button" class="btn-primary" id="btn-save-avatar" onclick="saveAvatar()">Сохранить</button>
       </div>
     </div>
   </div>

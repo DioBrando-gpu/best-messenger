@@ -25,7 +25,7 @@ const DEFAULT_SETTINGS = {
   theme: 'dark'
 };
 const GROUP_SLUG_REGEX = /^[a-z0-9_]{5,32}$/;
-const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
 function asyncHandler(fn) {
   return (req, res, next) => {
@@ -37,8 +37,8 @@ function asyncHandler(fn) {
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+app.use(bodyParser.json({ limit: '100mb' }));
+app.use(bodyParser.urlencoded({ limit: '100mb', extended: true }));
 app.use(session({
   secret: 'dio-messenger-secret-2026',
   resave: false,
@@ -156,6 +156,8 @@ function migrateUser(user) {
     user.settings.notifications = { ...defaultSettings().notifications, ...user.settings.notifications };
     user.settings.privacy = { ...defaultSettings().privacy, ...user.settings.privacy };
   }
+  if (!user.blacklist) user.blacklist = [];
+  if (!user.avatarImage) user.avatarImage = null;
   user.username = normalizeUsername(user.username);
   return user;
 }
@@ -188,19 +190,25 @@ function canMessageUser(viewerUsername, targetUser) {
   return true;
 }
 
+function isBlacklisted(viewerUsername, targetUser) {
+  return targetUser.blacklist?.includes(viewerUsername) || false;
+}
+
 async function publicUserPayload(user, viewerUsername) {
   const visible = canViewProfile(viewerUsername, user);
   const postsCount = visible ? await store.countPostsByAuthor(user.username) : null;
   return {
     username: user.username,
     avatar: user.avatar,
+    avatarImage: user.avatarImage || null,
     bio: visible ? user.bio : 'Профиль скрыт',
     followers: visible ? user.followers?.length || 0 : null,
     following: visible ? user.following?.length || 0 : null,
     posts: postsCount,
     profileVisible: visible,
-    canMessage: canMessageUser(viewerUsername, user),
+    canMessage: canMessageUser(viewerUsername, user) && !isBlacklisted(viewerUsername, user),
     isFollowing: user.followers?.includes(viewerUsername) || false,
+    isBlacklisted: user.blacklist?.includes(viewerUsername) || false,
     lastSeen: user.lastSeen || null,
     lastSeenText: formatLastSeen(user.lastSeen)
   };
@@ -227,9 +235,11 @@ app.post('/api/register', asyncHandler(async (req, res) => {
     username: validation.username,
     password,
     avatar: avatars[Math.floor(Math.random() * avatars.length)],
+    avatarImage: null,
     bio: 'Новый пользователь DIO',
     followers: [],
     following: [],
+    blacklist: [],
     createdAt: new Date().toISOString()
   });
 
@@ -311,6 +321,7 @@ app.get('/api/feed', requireAuth, asyncHandler(async (req, res) => {
     return {
       ...post,
       avatar: user?.avatar || '👤',
+      avatarImage: user?.avatarImage || null,
       isFavorite: post.favorites?.includes(req.session.username),
       isFollowing: user?.followers?.includes(req.session.username)
     };
@@ -479,6 +490,58 @@ app.post('/api/users/:username/follow', requireAuth, asyncHandler(async (req, re
   res.json({ message: 'Подписано', following: me.following.length, followers: target.followers.length });
 }));
 
+// Blacklist endpoints
+app.post('/api/users/:username/blacklist', requireAuth, asyncHandler(async (req, res) => {
+  const users = await readUsers();
+  const target = findUserByUsername(users, req.params.username);
+  const me = findUserByUsername(users, req.session.username);
+  if (!target || !me) {
+    return res.status(404).json({ message: 'Пользователь не найден' });
+  }
+  if (target.username === me.username) {
+    return res.status(400).json({ message: 'Нельзя добавить себя в чёрный список' });
+  }
+
+  me.blacklist = me.blacklist || [];
+  const idx = me.blacklist.indexOf(target.username);
+  if (idx > -1) {
+    me.blacklist.splice(idx, 1);
+    await store.saveUser(me);
+    return res.json({ message: 'Пользователь удалён из чёрного списка', blacklisted: false });
+  }
+
+  me.blacklist.push(target.username);
+  // Also unfollow if following
+  if (me.following) {
+    const followIdx = me.following.indexOf(target.username);
+    if (followIdx > -1) me.following.splice(followIdx, 1);
+  }
+  if (target.followers) {
+    const followerIdx = target.followers.indexOf(me.username);
+    if (followerIdx > -1) target.followers.splice(followerIdx, 1);
+  }
+  await store.saveUser(me);
+  await store.saveUser(target);
+  res.json({ message: 'Пользователь добавлен в чёрный список', blacklisted: true });
+}));
+
+app.get('/api/blacklist', requireAuth, asyncHandler(async (req, res) => {
+  const me = await store.getUser(req.session.username);
+  if (!me) return res.json({ users: [] });
+  
+  const blacklist = me.blacklist || [];
+  const users = await readUsers();
+  const blacklistedUsers = users
+    .filter(u => blacklist.includes(u.username))
+    .map(u => ({
+      username: u.username,
+      avatar: u.avatar,
+      avatarImage: u.avatarImage || null
+    }));
+  
+  res.json({ users: blacklistedUsers });
+}));
+
 app.delete('/api/posts/:id', requireAuth, asyncHandler(async (req, res) => {
   const posts = await readPosts();
   const index = posts.findIndex(p => p.id === parseInt(req.params.id));
@@ -517,11 +580,52 @@ function getDmContacts(username, messages) {
   }));
 }
 
+// Delete a single message
+app.delete('/api/messages/:id', requireAuth, asyncHandler(async (req, res) => {
+  const messages = await readMessages();
+  const msgId = parseInt(req.params.id);
+  const msgIndex = messages.findIndex(m => m.id === msgId);
+  
+  if (msgIndex === -1) {
+    return res.status(404).json({ message: 'Сообщение не найдено' });
+  }
+  
+  const msg = messages[msgIndex];
+  if (msg.from !== req.session.username) {
+    return res.status(403).json({ message: 'Можно удалять только свои сообщения' });
+  }
+  
+  // Mark as deleted instead of removing (like Telegram)
+  messages[msgIndex] = { ...msg, text: null, media: null, mediaType: null, voice: null, deleted: true };
+  await writeMessages(messages);
+  res.json({ message: 'Сообщение удалено' });
+}));
+
+// Delete entire conversation
+app.delete('/api/chat/:username', requireAuth, asyncHandler(async (req, res) => {
+  const username = normalizeUsername(req.params.username);
+  const messages = await readMessages();
+  
+  const filtered = messages.filter(m => {
+    if (m.groupId) return true;
+    return !((m.from === req.session.username && m.to === username) ||
+             (m.from === username && m.to === req.session.username));
+  });
+  
+  await writeMessages(filtered);
+  res.json({ message: 'Переписка удалена' });
+}));
+
 app.get('/api/messages', requireAuth, asyncHandler(async (req, res) => {
   const username = req.session.username;
   const messages = await readMessages();
   const groups = await readGroups();
-  const dmContacts = getDmContacts(username, messages);
+  const me = await store.getUser(username);
+  const blacklist = me?.blacklist || [];
+  
+  // Filter out messages from blacklisted users
+  const dmContacts = getDmContacts(username, messages)
+    .filter(c => !blacklist.includes(c.name));
 
   const groupContacts = groups
     .filter(g => isGroupMember(g, username))
@@ -642,7 +746,9 @@ app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
       mediaType: mediaType || null,
       voice: voice || null,
       timestamp: new Date().toISOString(),
-      read: false
+      read: false,
+      reactions: {},
+      deleted: false
     };
     messages.push(newMessage);
     await writeMessages(messages);
@@ -658,6 +764,12 @@ app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
   if (!recipient) {
     return res.status(404).json({ message: 'Пользователь не найден' });
   }
+  
+  // Check if viewer is blacklisted by recipient
+  if (isBlacklisted(req.session.username, recipient)) {
+    return res.status(403).json({ message: 'Вы в чёрном списке у этого пользователя' });
+  }
+  
   if (!canMessageUser(req.session.username, recipient)) {
     return res.status(403).json({ message: 'Этот пользователь не принимает сообщения' });
   }
@@ -672,7 +784,9 @@ app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
     mediaType: mediaType || null,
     voice: voice || null,
     timestamp: new Date().toISOString(),
-    read: false
+    read: false,
+    reactions: {},
+    deleted: false
   };
 
   messages.push(newMessage);
@@ -680,8 +794,48 @@ app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
   res.json({ message: 'Сообщение отправлено', msg: newMessage });
 }));
 
+// React to a message
+app.post('/api/messages/:id/react', requireAuth, asyncHandler(async (req, res) => {
+  const { emoji } = req.body;
+  if (!emoji) {
+    return res.status(400).json({ message: 'Укажите emoji' });
+  }
+  
+  const messages = await readMessages();
+  const msg = messages.find(m => m.id === parseInt(req.params.id));
+  if (!msg) {
+    return res.status(404).json({ message: 'Сообщение не найдено' });
+  }
+  
+  // Can react to any message you're involved in
+  const isParticipant = msg.from === req.session.username || msg.to === req.session.username || msg.to === `group:${req.session.username}`;
+  if (msg.groupId) {
+    const group = findGroupById(await readGroups(), msg.groupId);
+    if (!group || !isGroupMember(group, req.session.username)) {
+      return res.status(403).json({ message: 'Вы не участник этого чата' });
+    }
+  } else if (msg.from !== req.session.username && msg.to !== req.session.username) {
+    return res.status(403).json({ message: 'Это не ваше сообщение' });
+  }
+  
+  msg.reactions = msg.reactions || {};
+  const reactors = msg.reactions[emoji] || [];
+  const idx = reactors.indexOf(req.session.username);
+  if (idx > -1) {
+    reactors.splice(idx, 1);
+    if (reactors.length === 0) delete msg.reactions[emoji];
+  } else {
+    reactors.push(req.session.username);
+    msg.reactions[emoji] = reactors;
+  }
+  
+  await writeMessages(messages);
+  res.json({ reactions: msg.reactions });
+}));
+
 app.get('/api/groups', requireAuth, asyncHandler(async (req, res) => {
-  const groups = await readGroups()
+  const allGroups = await readGroups();
+  const groups = allGroups
     .filter(g => isGroupMember(g, req.session.username))
     .map(g => ({
       id: g.id,
@@ -769,12 +923,36 @@ app.get('/api/profile', requireAuth, asyncHandler(async (req, res) => {
   res.json({
     username: req.session.username,
     avatar: user?.avatar || '👤',
+    avatarImage: user?.avatarImage || null,
     bio: user?.bio || 'О себе ничего не рассказано',
     followers: user?.followers?.length || 0,
     following: user?.following?.length || 0,
     posts: posts.length,
     settings: user?.settings || defaultSettings()
   });
+}));
+
+// Upload avatar endpoint
+app.post('/api/profile/avatar', requireAuth, asyncHandler(async (req, res) => {
+  const { avatarImage } = req.body;
+  if (!avatarImage) {
+    return res.status(400).json({ message: 'Изображение не предоставлено' });
+  }
+  
+  // Validate it's a valid image data URL
+  if (!avatarImage.startsWith('data:image/')) {
+    return res.status(400).json({ message: 'Некорректный формат изображения' });
+  }
+  
+  const user = await store.getUser(req.session.username);
+  if (!user) {
+    return res.status(404).json({ message: 'Пользователь не найден' });
+  }
+  
+  user.avatarImage = avatarImage;
+  await store.saveUser(user);
+  
+  res.json({ message: 'Аватар обновлён', avatarImage: user.avatarImage });
 }));
 
 app.get('/api/settings', requireAuth, asyncHandler(async (req, res) => {
@@ -958,7 +1136,7 @@ app.post('/api/stand/create', requireAuth, asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Загрузите видео' });
   }
   if (video.length > MAX_VIDEO_BYTES) {
-    return res.status(400).json({ message: 'Видео слишком большое (макс. ~25 МБ)' });
+    return res.status(400).json({ message: 'Видео слишком большое (макс. ~100 МБ)' });
   }
   const stands = await readStands();
   const newStand = {
@@ -1141,7 +1319,8 @@ app.get('/api/stories/feed', requireAuth, asyncHandler(async (req, res) => {
       const user = users.find(u => u.username === s.author);
       return {
         ...s,
-        avatar: user?.avatar || '👤'
+        avatar: user?.avatar || '👤',
+        avatarImage: user?.avatarImage || null
       };
     })
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
