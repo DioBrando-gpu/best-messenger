@@ -707,7 +707,8 @@ function renderChatMessages(messages, isGroup = false) {
   messages.forEach(msg => {
     const msgEl = document.createElement('div');
     const mine = msg.from === currentUser;
-    msgEl.className = `message ${mine ? 'sent' : 'received'}`;
+    const isVideo = msg.media && msg.mediaType === 'video';
+    msgEl.className = `message ${mine ? 'sent' : 'received'}${isVideo ? ' has-video' : ''}`;
     
     let content = '';
     if (isGroup && !mine) {
@@ -719,8 +720,8 @@ function renderChatMessages(messages, isGroup = false) {
     if (msg.media && msg.mediaType === 'image') {
       content += `<br><img src="${msg.media}" class="msg-media photo-clickable" loading="lazy">`;
     }
-    if (msg.media && msg.mediaType === 'video') {
-      content += `<br><video src="${msg.media}" class="msg-video-bubble" controls playsinline></video>`;
+    if (isVideo) {
+      content += `<video src="${msg.media}" class="msg-video-bubble" controls playsinline></video>`;
     }
     if (msg.voice) {
       content += `<br><audio src="${msg.voice}" class="msg-voice" controls></audio>`;
@@ -746,7 +747,6 @@ function renderChatMessages(messages, isGroup = false) {
     });
     msgEl.querySelector('.msg-delete-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      // Show confirmation inline
       if (confirm(t('delete_message_confirm'))) {
         deleteMessage(msg.id);
       }
@@ -962,15 +962,21 @@ async function sendMessage() {
       body.to = currentChat;
     }
 
+    // Send first
     await request('/api/messages/send', {
       method: 'POST',
       body: JSON.stringify(body)
     });
 
+    // Clear input immediately
     messageText.value = '';
     pendingMedia = null;
     updateMediaPreview();
+    
+    // Hide indicator IMMEDIATELY after server response
     hideSendingIndicator();
+    
+    // Then reload chat
     if (currentChatType === 'group') {
       await openGroupChat(currentGroupId);
     } else {

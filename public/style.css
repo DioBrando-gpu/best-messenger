@@ -557,11 +557,39 @@ body.on-stand .stand-fab {
 }
 
 .message {
-  padding: 12px 14px;
-  border-radius: 16px;
+  padding: 8px 12px;
+  border-radius: 14px;
   max-width: 80%;
   word-wrap: break-word;
-  font-size: .95rem;
+  font-size: .9rem;
+  line-height: 1.4;
+}
+.message.has-video {
+  padding: 6px;
+  border-radius: 999px;
+  max-width: 240px;
+}
+.message.has-video .msg-video-bubble {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  margin: 0;
+  background: #000;
+  transform: scaleX(-1);
+}
+.message.has-video .msg-actions-row,
+.message.has-video .msg-reactions-row {
+  display: none;
+}
+.message.has-video .msg-video-bubble:hover + .msg-actions-row,
+.message.has-video:hover .msg-actions-row {
+  display: flex;
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .message.sent {
