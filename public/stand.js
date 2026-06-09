@@ -46,7 +46,11 @@ function renderStandSlide(stand) {
     <video class="stand-video" src="${stand.video}" loop playsinline muted preload="metadata"></video>
     <div class="stand-overlay">
       <div class="stand-side-actions">
-        <button type="button" class="stand-action like-btn" data-id="${stand.id}">❤<span>${stand.likes?.length || 0}</span></button>
+        <div class="stand-avatar-wrap" style="position:absolute;bottom:120px;left:16px;z-index:10;display:flex;flex-direction:column;align-items:center;gap:4px;">
+        ${stand.avatarImage ? `<img src="${stand.avatarImage}" class="stand-avatar-img" style="width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,0.4);cursor:pointer;" data-author="${stand.author}">` : `<div class="stand-avatar-placeholder" style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:1.3rem;border:2px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,0.4);color:white;" data-author="${stand.author}">${stand.avatar || '\u{1F464}'}</div>`}
+        ${stand.author !== window.currentUser ? `<button type="button" class="stand-follow-btn" style="width:24px;height:24px;border-radius:50%;background:#8b5cf6;border:2px solid #fff;color:white;font-size:1.1rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;" data-author="${stand.author}" title="\u041F\u043E\u0434\u043F\u0438\u0441\u0430\u0442\u044C\u0441\u044F">+</button>` : ''}
+      </div>
+      <button type="button" class="stand-action like-btn" data-id="${stand.id}">❤<span>${stand.likes?.length || 0}</span></button>
         <button type="button" class="stand-action favorite-btn ${stand.isFavorite ? 'favorite-active' : ''}" data-id="${stand.id}">⭐<span>${stand.favorites?.length || 0}</span></button>
         <button type="button" class="stand-action comment-btn" data-id="${stand.id}">💬<span>${stand.comments?.length || 0}</span></button>
         <button type="button" class="stand-action share-btn" data-id="${stand.id}">🔗<span>${stand.shares || 0}</span></button>

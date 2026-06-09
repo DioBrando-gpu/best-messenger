@@ -5,30 +5,40 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DIO - Вход</title>
   <link rel="stylesheet" href="style.css">
+  <style>
+    body.login-bg { margin: 0; padding: 0; }
+    .login-card .form-item { margin-bottom: 0; }
+    .login-card .form-item label { color: #a78bfa; font-size: 0.85rem; margin-bottom: 6px; display: block; }
+    .login-card .form-item small { display: block; margin-top: -8px; margin-bottom: 12px; }
+    #message { border-radius: 12px; padding: 12px; text-align: center; font-size: 0.9rem; }
+    @keyframes fireFlicker {
+      0%, 100% { text-shadow: 0 0 10px rgba(139,92,246,0.5); }
+      50% { text-shadow: 0 0 20px rgba(139,92,246,0.8), 0 0 40px rgba(99,102,241,0.3); }
+    }
+    .login-card h1 { animation: fireFlicker 3s ease-in-out infinite; }
+  </style>
 </head>
-<body>
-  <div class="container">
-    <main class="card form-card">
-      <div class="form-header">
-        <h1>🔥 DIO</h1>
-        <p>Современный мессенджер. Общайся со своей аудиторией.</p>
-      </div>
+<body class="login-bg">
+  <div class="container" style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
+    <main class="card login-card">
+      <h1>🔥 DIO</h1>
+      <p class="subtitle">Современный мессенджер. Общайся со своей аудиторией.</p>
 
       <div class="form-item">
         <label for="username">@username</label>
-        <input id="username" type="text" placeholder="my_name" autocomplete="username" maxlength="32" spellcheck="false">
-        <small style="color: #a5b4fc; font-size: 0.85rem;">Только a-z, 0-9 и _, минимум 5 символов</small>
+        <input id="username" class="login-input" type="text" placeholder="my_name" autocomplete="username" maxlength="32" spellcheck="false">
+        <small style="color: #a5b4fc; font-size: 0.8rem;">Только a-z, 0-9 и _, минимум 5 символов</small>
       </div>
       <div class="form-item">
         <label for="password">Пароль</label>
-        <input id="password" type="password" placeholder="Введите пароль" autocomplete="current-password">
+        <input id="password" class="login-input" type="password" placeholder="Введите пароль" autocomplete="current-password">
       </div>
 
       <div id="message" class="alert hidden"></div>
 
-      <div class="form-actions">
-        <button id="btn-login" class="btn-primary">Войти</button>
-        <button id="btn-register" class="btn-primary">Регистрация</button>
+      <div class="form-actions login-actions" style="margin-top: 16px;">
+        <button id="btn-login" class="login-btn login-btn-primary">Войти</button>
+        <button id="btn-register" class="login-btn login-btn-secondary">Регистрация</button>
       </div>
     </main>
   </div>
@@ -78,11 +88,8 @@
 
     btnLogin.addEventListener('click', () => submit('/api/login'));
     btnRegister.addEventListener('click', () => submit('/api/register'));
-    
-    // Вход по Enter
-    passwordInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') submit('/api/login');
-    });
+    passwordInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submit('/api/login'); });
+    usernameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submit('/api/login'); });
   </script>
 </body>
 </html>

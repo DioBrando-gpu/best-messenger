@@ -173,7 +173,10 @@ function renderPost(post) {
       <div class="post-meta">
         <div class="post-author-row">
           ${avatarHtml}
-          <strong>@${post.author}</strong>
+          <div class="post-author-info">
+            <span class="post-author-nickname">${post.authorNickname || post.author}</span>
+            <span class="post-author-username">@${post.author}</span>
+          </div>
         </div>
         <small>${new Date(post.timestamp).toLocaleString('ru-RU')}</small>
       </div>
