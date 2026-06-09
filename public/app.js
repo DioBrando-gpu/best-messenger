@@ -1404,6 +1404,14 @@ function renderSettingsUI() {
       </div>
 
       <div class="settings-group">
+        <h3 style="margin:0 0 8px;font-size:1rem;">Nickname</h3>
+        <label for="set-nickname">Имя отображения</label>
+        <input id="set-nickname" type="text" placeholder="${currentUser || ''}" maxlength="40" autocomplete="off" spellcheck="false">
+        <p class="settings-hint">Имя, которое видят другие пользователи вместо @username</p>
+        <button type="button" class="btn-primary" id="btn-save-nickname">${t('save')}</button>
+      </div>
+
+      <div class="settings-group">
         <h3 style="margin:0 0 8px;font-size:1rem;">Bio</h3>
         <label for="set-bio">Bio</label>
         <textarea id="set-bio" rows="3" maxlength="200"></textarea>

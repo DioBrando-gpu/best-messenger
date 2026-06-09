@@ -669,9 +669,11 @@ body.on-stand .stand-fab {
   align-items: center;
   justify-content: center;
   overflow: visible;
+  position: relative;
 }
 .message.has-video.has-reactions {
-  height: 240px;
+  height: auto;
+  min-height: 200px;
 }
 .message.has-video .msg-video-wrap {
   position: relative;
@@ -708,14 +710,21 @@ body.on-stand .stand-fab {
   bottom: -10px;
 }
 .message.has-video .msg-reactions-row {
-  position: relative;
-  z-index: 2;
-  background: transparent;
-  border: none;
-  margin-top: 6px;
-  padding: 0;
+  position: absolute;
+  bottom: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  border-radius: 12px;
+  padding: 4px 8px;
   justify-content: center;
   opacity: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  white-space: nowrap;
 }
 .message.has-video .msg-time,
 .message.has-video .msg-text {
