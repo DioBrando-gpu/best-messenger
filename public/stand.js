@@ -183,7 +183,7 @@ async function compressVideo(file, maxBytes = 100 * 1024 * 1024) {
   return await readFileAsDataURL(file);
 }
 
-// Когда файл выбран — загружаем с проверкой размера
+// Когда файл выбран — загружаем с проверкой размера и сжатием
 standFileInput.addEventListener('change', async () => {
   const file = standFileInput.files?.[0];
   if (!file) return;
@@ -195,22 +195,142 @@ standFileInput.addEventListener('change', async () => {
     return;
   }
 
-  setStatus('Загрузка видео...');
+  setStatus('Подготовка видео...');
 
   try {
-    const videoData = await readFileAsDataURL(file);
-    await request('/api/stand/create', {
-      method: 'POST',
-      body: JSON.stringify({ video: videoData, caption: '' })
-    });
+    // Сжимаем/уменьшаем видео на клиенте (через canvas + MediaRecorder)
+    const videoData = await compressVideoForUpload(file, 25 * 1024 * 1024);
+    setStatus('Отправка на сервер...');
+
+    // Используем прямой fetch с увеличенным таймаутом
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 минут
+    let resp;
+    try {
+      resp = await fetch('/api/stand/create', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video: videoData, caption: '' }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      throw new Error(json?.message || 'Ошибка отправки (' + resp.status + ')');
+    }
     standFileInput.value = '';
     loadStandFeed(true);
     setStatus('Видео опубликовано в Stand!');
   } catch (error) {
-    setStatus(error.message);
+    if (error.name === 'AbortError') {
+      setStatus('Превышено время ожидания (5 мин). Попробуйте более короткое видео.');
+    } else {
+      setStatus('Ошибка: ' + error.message);
+    }
     standFileInput.value = '';
   }
 });
+
+// Сжимает видео до целевого размера через canvas + MediaRecorder.
+// Если сжатие не удалось или файл уже меньше лимита — возвращает как data URL.
+async function compressVideoForUpload(file, targetBytes) {
+  // Если файл уже меньше лимита и не видео — просто читаем
+  if (file.size <= targetBytes && !file.type.startsWith('video/')) {
+    return await readFileAsDataURL(file);
+  }
+
+  // Если видео меньше 30 МБ — не сжимаем (экономия времени)
+  if (file.size <= 30 * 1024 * 1024) {
+    return await readFileAsDataURL(file);
+  }
+
+  // Пробуем сжать через canvas + MediaRecorder
+  try {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.src = url;
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = resolve;
+      video.onerror = () => reject(new Error('Не удалось загрузить видео'));
+      setTimeout(() => reject(new Error('Таймаут загрузки видео')), 10000);
+    });
+
+    // Уменьшаем до 540p
+    const targetWidth = 540;
+    const ratio = video.videoWidth / video.videoHeight || 16/9;
+    const w = Math.min(video.videoWidth, targetWidth);
+    const h = Math.round(w / ratio);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    // Выбираем битрейт в зависимости от длительности
+    const duration = video.duration || 10;
+    const targetBitsPerSec = Math.min(800_000, Math.max(250_000, (targetBytes * 8) / duration));
+
+    const stream = canvas.captureStream(24);
+    let mimeType = 'video/webm;codecs=vp8';
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'video/webm';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        URL.revokeObjectURL(url);
+        return await readFileAsDataURL(file); // fallback
+      }
+    }
+
+    const chunks = [];
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: targetBitsPerSec });
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+
+    const recordingDone = new Promise((resolve) => {
+      recorder.onstop = resolve;
+    });
+
+    // Запускаем запись пока играет видео
+    let drawHandle;
+    function draw() {
+      if (video.ended || video.paused) return;
+      ctx.drawImage(video, 0, 0, w, h);
+      drawHandle = requestAnimationFrame(draw);
+    }
+
+    video.currentTime = 0;
+    await video.play();
+    recorder.start(200);
+    draw();
+
+    await new Promise((resolve) => {
+      video.onended = resolve;
+    });
+    cancelAnimationFrame(drawHandle);
+    recorder.stop();
+    video.pause();
+    URL.revokeObjectURL(url);
+
+    await recordingDone;
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn('Video compression failed, using original:', e);
+    setStatus('Не удалось сжать видео, отправляю как есть...');
+    return await readFileAsDataURL(file);
+  }
+}
 
 // Экспорт для app.js
 window.loadStandFeed = loadStandFeed;

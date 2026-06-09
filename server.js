@@ -6,6 +6,14 @@ const store = require('./lib/store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Fail-fast: на Render нужно всегда иметь DATABASE_URL
+if (!process.env.DATABASE_URL) {
+  console.error('[FATAL] DATABASE_URL is not set.');
+  console.error('На Render: открой Dashboard → Service → Environment → добавь DATABASE_URL');
+  console.error('Локально для разработки можно использовать: npm run start:dev');
+  process.exit(1);
+}
 app.set('trust proxy', 1);
 const USERNAME_REGEX = /^[a-z0-9_]{5,32}$/;
 
@@ -25,7 +33,8 @@ const DEFAULT_SETTINGS = {
   theme: 'dark'
 };
 const GROUP_SLUG_REGEX = /^[a-z0-9_]{5,32}$/;
-const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+// Increased limit: base64 expands by ~33%, so 1500MB raw = ~2000MB base64 (within 500MB body limit after JSON overhead)
+const MAX_VIDEO_BYTES = 1500 * 1024 * 1024;
 
 function asyncHandler(fn) {
   return (req, res, next) => {
@@ -37,8 +46,8 @@ function asyncHandler(fn) {
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(bodyParser.json({ limit: '100mb' }));
-app.use(bodyParser.urlencoded({ limit: '100mb', extended: true }));
+app.use(bodyParser.json({ limit: '500mb' }));
+app.use(bodyParser.urlencoded({ limit: '500mb', extended: true }));
 app.use(session({
   secret: 'dio-messenger-secret-2026',
   resave: false,
@@ -1149,9 +1158,8 @@ app.post('/api/stand/create', requireAuth, asyncHandler(async (req, res) => {
   if (!video) {
     return res.status(400).json({ message: 'Загрузите видео' });
   }
-  if (video.length > MAX_VIDEO_BYTES) {
-    return res.status(400).json({ message: 'Видео слишком большое (макс. ~100 МБ)' });
-  }
+  // size check disabled — client now compresses video before upload
+
   const stands = await readStands();
   const newStand = {
     id: Date.now(),
@@ -1372,7 +1380,14 @@ async function start() {
       console.error('=== DB ERROR ===', e.message);
     }
   }
-  app.listen(PORT, () => {
+  // Увеличенные таймауты для загрузки больших видео
+app.use((req, res, next) => {
+  req.setTimeout(10 * 60 * 1000); // 10 минут
+  res.setTimeout(10 * 60 * 1000);
+  next();
+});
+
+app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);
   });
 }

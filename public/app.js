@@ -697,7 +697,8 @@ function getReactionsString(reactions) {
   return Object.entries(reactions)
     .map(([emoji, users]) => {
       const count = users.length;
-      return `<span class="msg-reaction" data-reaction="${emoji}">${emoji} ${count}</span>`;
+      const mineReacted = users.includes(currentUser);
+      return `<span class="msg-reaction${mineReacted ? ' reacted' : ''}" data-reaction="${emoji}" title="${users.map(u => '@' + u).join(', ')}">${emoji} <span class="msg-reaction-count">${count}</span></span>`;
     })
     .join('');
 }
@@ -708,46 +709,53 @@ function renderChatMessages(messages, isGroup = false) {
     const msgEl = document.createElement('div');
     const mine = msg.from === currentUser;
     const isVideo = msg.media && msg.mediaType === 'video';
-    msgEl.className = `message ${mine ? 'sent' : 'received'}${isVideo ? ' has-video' : ''}`;
+    const isImage = msg.media && msg.mediaType === 'image';
+    const isVoice = !!msg.voice;
+    let cls = `message ${mine ? 'sent' : 'received'}`;
+    if (isVideo) cls += ' has-video';
+    else if (isImage) cls += ' has-image';
+    if (isVoice) cls += ' has-voice';
+    if (msg.reactions && Object.keys(msg.reactions).length > 0) cls += ' has-reactions';
+    msgEl.className = cls;
+    msgEl.dataset.msgId = msg.id;
     
     let content = '';
     if (isGroup && !mine) {
-      content += `<small>@${msg.from}</small><br>`;
+      content += `<div class="msg-author">@${escapeHtml(msg.from)}</div>`;
     }
     if (msg.text) {
-      content += escapeHtml(msg.text);
+      content += `<div class="msg-text">${escapeHtml(msg.text)}</div>`;
     }
-    if (msg.media && msg.mediaType === 'image') {
-      content += `<br><img src="${msg.media}" class="msg-media photo-clickable" loading="lazy">`;
+    if (isImage && !isVideo) {
+      content += `<div class="msg-media-wrap"><img src="${msg.media}" class="msg-media photo-clickable" loading="lazy" alt=""></div>`;
     }
     if (isVideo) {
-      content += `<video src="${msg.media}" class="msg-video-bubble" controls playsinline></video>`;
+      content += `<div class="msg-video-wrap"><video src="${msg.media}" class="msg-video-bubble" controls playsinline></video></div>`;
     }
-    if (msg.voice) {
-      content += `<br><audio src="${msg.voice}" class="msg-voice" controls></audio>`;
+    if (isVoice) {
+      content += `<div class="msg-voice-wrap"><audio src="${msg.voice}" class="msg-voice" controls></audio></div>`;
     }
-    
-    // Reactions row - show ABOVE the actions
+    if (msg.timestamp) {
+      const d = new Date(msg.timestamp);
+      const timeStr = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      content += `<span class="msg-time">${timeStr}</span>`;
+    }
     const reactionsStr = getReactionsString(msg.reactions);
     if (reactionsStr) {
       content += `<div class="msg-reactions-row">${reactionsStr}</div>`;
     }
-    
-    // Actions row - delete button for anyone (any participant can delete), react for all
     content += `<div class="msg-actions-row">`;
-    content += `<button class="msg-action-btn msg-delete-btn" data-id="${msg.id}" title="${t('delete_message')}">🗑</button>`;
-    content += `<button class="msg-action-btn msg-react-btn" data-id="${msg.id}" title="${t('reaction_add')}">😊</button>`;
+    content += `<button class="msg-action-btn msg-react-btn" data-id="${msg.id}" title="Реакция">😊</button>`;
+    content += `<button class="msg-action-btn msg-delete-btn" data-id="${msg.id}" title="Удалить">🗑</button>`;
     content += `</div>`;
+    msgEl.innerHTML = content || '<div class="msg-text">(пусто)</div>';
     
-    msgEl.innerHTML = content || '(пусто)';
-    
-    // Event listeners
     msgEl.querySelectorAll('.photo-clickable').forEach(img => {
       img.addEventListener('click', () => openPhotoFullscreen(img.src));
     });
     msgEl.querySelector('.msg-delete-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (confirm(t('delete_message_confirm'))) {
+      if (confirm('Удалить сообщение?')) {
         deleteMessage(msg.id);
       }
     });
@@ -755,7 +763,6 @@ function renderChatMessages(messages, isGroup = false) {
       e.stopPropagation();
       showReactionPicker(msg.id, msgEl);
     });
-    // Click on existing reaction to toggle
     msgEl.querySelectorAll('.msg-reaction').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
