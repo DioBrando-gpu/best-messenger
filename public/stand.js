@@ -25,7 +25,7 @@ async function loadStandFeed(reset = false) {
   standLoading = true;
   try {
     const data = await request(`/api/stand/feed?page=${standPage}&limit=5`);
-    data.stands.forEach(stand => standFeed.appendChild(renderStandSlide(stand)));
+    if (data && data.stands) data.stands.forEach(stand => standFeed.appendChild(renderStandSlide(stand)));
     standHasMore = data.hasMore;
     standPage += 1;
     initStandObserver();
@@ -118,15 +118,31 @@ function toggleStandComments(stand, slide) {
 }
 
 async function standLike(id, slide) {
-  const data = await request(`/api/stand/${id}/like`, { method: 'POST' });
-  slide.querySelector('.like-btn span').textContent = data.likes.length;
+  try {
+    const data = await request(`/api/stand/${id}/like`, { method: 'POST' });
+    if (data && slide) {
+      const likeBtn = slide.querySelector('.like-btn');
+      if (likeBtn) {
+        likeBtn.classList.toggle('like-active', data.likes && data.likes.includes(window.currentUser));
+        const span = likeBtn.querySelector('span');
+        if (span) span.textContent = data.likes ? data.likes.length : 0;
+      }
+    }
+  } catch (e) { console.error(e); }
 }
 
 async function standFavorite(id, slide) {
-  const data = await request(`/api/stand/${id}/favorite`, { method: 'POST' });
-  const btn = slide.querySelector('.favorite-btn');
-  btn.querySelector('span').textContent = data.favorites.length;
-  btn.classList.toggle('favorite-active', data.favorites.includes(window.currentUser));
+  try {
+    const data = await request(`/api/stand/${id}/favorite`, { method: 'POST' });
+    if (data && slide) {
+      const btn = slide.querySelector('.favorite-btn');
+      if (btn) {
+        const span = btn.querySelector('span');
+        if (span) span.textContent = data.favorites ? data.favorites.length : 0;
+        btn.classList.toggle('favorite-active', data.favorites && data.favorites.includes(window.currentUser));
+      }
+    }
+  } catch (e) { console.error(e); }
 }
 
 async function standShare(id, slide) {

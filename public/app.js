@@ -1549,6 +1549,16 @@ function renderSettingsUI() {
     }
   });
 
+  document.querySelector('#btn-save-nickname')?.addEventListener('click', async () => {
+    const nickname = document.querySelector('#set-nickname')?.value || '';
+    try {
+      await request('/api/profile', { method: 'PUT', body: JSON.stringify({ nickname }) });
+      setStatus('Nickname saved');
+      loadProfile();
+    } catch (error) { setStatus(error.message); }
+  });
+  request('/api/profile').then(p => { const el = document.querySelector('#set-nickname'); if (el) el.value = p.nickname || ''; }).catch(() => {});
+
   document.querySelector('#btn-save-bio')?.addEventListener('click', async () => {
     const bio = document.querySelector('#set-bio')?.value || '';
     try {

@@ -1512,3 +1512,36 @@ button,
   color: #8b5cf6;
   text-shadow: 0 0 10px rgba(139,92,246,0.4);
 }
+
+/* ===== STYLED INPUTS ===== */
+input[type="text"], input[type="password"], input[type="email"],
+input[type="number"], textarea, select {
+  width: 100%; padding: 12px 14px;
+  border: 1px solid rgba(139,92,246,0.2); border-radius: 10px;
+  background: rgba(30,41,59,0.6); color: #e2e8f0;
+  font-size: 0.95rem; transition: border-color 0.3s, box-shadow 0.3s;
+  outline: none; box-sizing: border-box;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,0.12);
+}
+input::placeholder, textarea::placeholder { color: #64748b; }
+textarea { resize: vertical; min-height: 60px; }
+select {
+  cursor: pointer; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Cpath fill='%238b5cf6' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
+}
+.settings-group {
+  background: rgba(30,41,59,0.4); border: 1px solid rgba(139,92,246,0.1);
+  border-radius: 14px; padding: 20px; margin-bottom: 16px;
+}
+.settings-group h3 { margin: 0 0 12px; font-size: 1rem; color: #a78bfa; }
+.settings-group label { display: block; margin-bottom: 6px; font-size: 0.85rem; color: #94a3b8; }
+.btn-primary {
+  padding: 10px 20px; border: none; border-radius: 10px;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white; font-weight: 600; cursor: pointer;
+  transition: all 0.3s ease; font-size: 0.9rem; margin-top: 8px;
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(139,92,246,0.3); }
