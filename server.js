@@ -6,14 +6,6 @@ const store = require('./lib/store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Fail-fast: на Render нужно всегда иметь DATABASE_URL
-if (!process.env.DATABASE_URL) {
-  console.error('[FATAL] DATABASE_URL is not set.');
-  console.error('На Render: открой Dashboard → Service → Environment → добавь DATABASE_URL');
-  console.error('Локально для разработки можно использовать: npm run start:dev');
-  process.exit(1);
-}
 app.set('trust proxy', 1);
 const USERNAME_REGEX = /^[a-z0-9_]{5,32}$/;
 

@@ -4,7 +4,8 @@
   "description": "DIO - современный мессенджер с лентой, чатом и постами.",
   "main": "server.js",
   "scripts": {
-    "start": "node -e \"if (!process.env.DATABASE_URL) { console.error(\"[FATAL] DATABASE_URL is not set! On Render: add a PostgreSQL database and link it via Environment.\"); process.exit(1); } require('./server.js');\"",
+    "prestart": "node prestart.js",
+    "start": "node prestart.js",
     "start:dev": "node server.js"
   },
   "dependencies": {
