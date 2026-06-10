@@ -1,5 +1,6 @@
 const http = require('http');
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const bodyParser = require('body-parser');
 const path = require('path');
 const crypto = require('crypto');
@@ -18,7 +19,6 @@ const DEFAULT_SETTINGS = {
   language: 'ru',
   theme: 'dark'
 };
-const GROUP_SLUG_REGEX = /^[a-z0-9_]{5,32}$/;
 
 function asyncHandler(fn) {
   return (req, res, next) => {
@@ -30,40 +30,33 @@ function asyncHandler(fn) {
 }
 
 // ============== SIGNED COOKIE AUTH ==============
-const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
-const COOKIE_NAME = 'dio_auth';
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 function sign(value) {
-  const hmac = crypto.createHmac('sha256', COOKIE_SECRET).update(value).digest('hex').slice(0, 16);
-  return `${value}.${hmac}`;
+  return crypto.createHmac('sha256', COOKIE_SECRET).update(value).digest('hex').slice(0, 16);
 }
 
-function unsign(signed) {
-  if (!signed || typeof signed !== 'string') return null;
-  const dot = signed.lastIndexOf('.');
-  if (dot === -1) return null;
-  const value = signed.slice(0, dot);
-  const hmac = signed.slice(dot + 1);
-  const expected = crypto.createHmac('sha256', COOKIE_SECRET).update(value).digest('hex').slice(0, 16);
-  if (hmac !== expected) return null;
-  return value;
+app.use(cookieParser(COOKIE_SECRET));
+
+function getAuthUsername(req) {
+  if (req.signedCookies && req.signedCookies.dio_auth) {
+    return req.signedCookies.dio_auth;
+  }
+  return null;
 }
 
 function setAuthCookie(res, username) {
-  const val = sign(username);
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${val}; Path=/; Max-Age=${COOKIE_MAX_AGE / 1000}; HttpOnly; SameSite=Lax`);
+  res.cookie('dio_auth', username, {
+    signed: true,
+    maxAge: COOKIE_MAX_AGE,
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/'
+  });
 }
 
 function clearAuthCookie(res) {
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly`);
-}
-
-function getAuthUsername(req) {
-  const cookies = (req.headers.cookie || '').split(';').map(c => c.trim());
-  const authCookie = cookies.find(c => c.startsWith(COOKIE_NAME + '='));
-  if (!authCookie) return null;
-  const val = authCookie.split('=')[1];
-  return unsign(decodeURIComponent(val));
+  res.cookie('dio_auth', '', { maxAge: 0, httpOnly: true, path: '/' });
 }
 
 function requireAuth(req, res, next) {
@@ -117,10 +110,12 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/user', asyncHandler(async (req, res) => {
   const username = getAuthUsername(req);
-  console.log('/api/user -> authUsername:', username, 'cookies:', req.headers.cookie?.slice(0, 60));
   if (!username) return res.json({ loggedIn: false });
   let user = await store.getUser(username);
-  if (user) { user.lastSeen = new Date().toISOString(); await store.saveUser(user); }
+  if (user) {
+    user.lastSeen = new Date().toISOString();
+    await store.saveUser(user);
+  }
   res.json({ loggedIn: true, username, settings: user?.settings || DEFAULT_SETTINGS });
 }));
 
@@ -253,7 +248,7 @@ app.post('/api/posts/:id/repost', requireAuth, asyncHandler(async (req, res) => 
   const p = posts.find(x => x.id === parseInt(req.params.id));
   if (!p) return res.status(404).json({ message: 'Пост не найден' });
   p.reposts = (p.reposts || 0) + 1;
-  const r = { id: Date.now(), author: req.authUsername, text: `Репост от @${p.author}: ${p.text}`, image: p.image, timestamp: new Date().toISOString(), likes: [], favorites: [], comments: [], shares: 0, reposts: 0, originalAuthor: p.author, originalPostId: p.id };
+  const r = { id: Date.now(), author: req.authUsername, text: 'Репост от @' + p.author + ': ' + p.text, image: p.image, timestamp: new Date().toISOString(), likes: [], favorites: [], comments: [], shares: 0, reposts: 0, originalAuthor: p.author, originalPostId: p.id };
   posts.push(r);
   await store.writePosts(posts);
   res.json({ repost: r });
@@ -275,8 +270,7 @@ app.post('/api/users/:username/follow', requireAuth, asyncHandler(async (req, re
   const me = findUser(users, req.authUsername);
   if (!target || !me) return res.status(404).json({ message: 'Пользователь не найден' });
   if (target.username === me.username) return res.status(400).json({ message: 'Нельзя подписаться на себя' });
-  target.followers = target.followers || [];
-  me.following = me.following || [];
+  target.followers = target.followers || []; me.following = me.following || [];
   const i = target.followers.indexOf(me.username);
   if (i > -1) {
     target.followers.splice(i, 1);
@@ -285,8 +279,7 @@ app.post('/api/users/:username/follow', requireAuth, asyncHandler(async (req, re
     await store.writeUsers(users);
     return res.json({ message: 'Отписано', following: me.following.length, followers: target.followers.length });
   }
-  target.followers.push(me.username);
-  me.following.push(target.username);
+  target.followers.push(me.username); me.following.push(target.username);
   await store.writeUsers(users);
   res.json({ message: 'Подписано', following: me.following.length, followers: target.followers.length });
 }));
@@ -299,16 +292,11 @@ app.post('/api/users/:username/blacklist', requireAuth, asyncHandler(async (req,
   if (target.username === me.username) return res.status(400).json({ message: 'Нельзя добавить себя в чёрный список' });
   me.blacklist = me.blacklist || [];
   const i = me.blacklist.indexOf(target.username);
-  if (i > -1) {
-    me.blacklist.splice(i, 1);
-    await store.saveUser(me);
-    return res.json({ message: 'Пользователь удалён из чёрного списка', blacklisted: false });
-  }
+  if (i > -1) { me.blacklist.splice(i, 1); await store.saveUser(me); return res.json({ message: 'Пользователь удалён из чёрного списка', blacklisted: false }); }
   me.blacklist.push(target.username);
   if (me.following) { const fi = me.following.indexOf(target.username); if (fi > -1) me.following.splice(fi, 1); }
   if (target.followers) { const fi = target.followers.indexOf(me.username); if (fi > -1) target.followers.splice(fi, 1); }
-  await store.saveUser(me);
-  await store.saveUser(target);
+  await store.saveUser(me); await store.saveUser(target);
   res.json({ message: 'Пользователь добавлен в чёрный список', blacklisted: true });
 }));
 
@@ -324,7 +312,7 @@ function getDmContacts(username, messages) {
   const msgs = messages.filter(m => !m.groupId && (m.from === username || m.to === username));
   const g = {};
   msgs.forEach(m => { const c = m.from === username ? m.to : m.from; if (!g[c]) g[c] = []; g[c].push(m); });
-  return Object.entries(g).map(([n, ms]) => ({ id: n, type: 'dm', name: n, displayName: `@${n}`, lastMessage: ms[ms.length - 1]?.text, timestamp: ms[ms.length - 1]?.timestamp, unread: ms.some(x => x.to === username && !x.read) }));
+  return Object.entries(g).map(([n, ms]) => ({ id: n, type: 'dm', name: n, displayName: '@' + n, lastMessage: ms[ms.length - 1]?.text, timestamp: ms[ms.length - 1]?.timestamp, unread: ms.some(x => x.to === username && !x.read) }));
 }
 
 function isGroupMember(group, username) { return group.members?.includes(username); }
@@ -340,7 +328,7 @@ app.get('/api/messages', requireAuth, asyncHandler(async (req, res) => {
   const gc = groups.filter(g => isGroupMember(g, u)).map(g => {
     const msgs = messages.filter(m => m.groupId === g.id);
     const last = msgs[msgs.length - 1];
-    return { id: g.id, type: g.type, name: g.id, displayName: g.type === 'channel' ? `📢 ${g.title}` : `👥 ${g.title}`, slug: g.slug, lastMessage: last?.text, timestamp: last?.timestamp, unread: msgs.some(m => m.to === `group:${g.id}` && m.from !== u && !m.read) };
+    return { id: g.id, type: g.type, name: g.id, displayName: (g.type === 'channel' ? '📢 ' : '👥 ') + g.title, slug: g.slug, lastMessage: last?.text, timestamp: last?.timestamp, unread: msgs.some(m => m.to === 'group:' + g.id && m.from !== u && !m.read) };
   });
   const contacts = [...dc, ...gc].sort((a, b) => { const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0; const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0; return tb - ta; });
   res.json({ contacts });
@@ -374,7 +362,7 @@ app.get('/api/chat/group/:groupId', requireAuth, asyncHandler(async (req, res) =
   if (!group || !isGroupMember(group, req.authUsername)) return res.status(404).json({ message: 'Группа не найдена' });
   const messages = await store.readMessages();
   const chat = messages.filter(m => m.groupId === group.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  chat.forEach(m => { if (m.to === `group:${group.id}` && m.from !== req.authUsername && !m.read) m.read = true; });
+  chat.forEach(m => { if (m.to === 'group:' + group.id && m.from !== req.authUsername && !m.read) m.read = true; });
   await store.writeMessages(messages);
   res.json({ messages: chat, group, chatType: 'group' });
 }));
@@ -388,7 +376,7 @@ app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
     const groups = await store.readGroups();
     const group = findGroup(groups, groupId);
     if (!group || !isGroupMember(group, req.authUsername)) return res.status(404).json({ message: 'Группа не найдена' });
-    const newMsg = { id: Date.now(), from: req.authUsername, to: `group:${group.id}`, groupId: group.id, text: bodyText || null, media: media || null, mediaType: mediaType || null, voice: voice || null, timestamp: new Date().toISOString(), read: false, reactions: {}, deleted: false };
+    const newMsg = { id: Date.now(), from: req.authUsername, to: 'group:' + group.id, groupId: group.id, text: bodyText || null, media: media || null, mediaType: mediaType || null, voice: voice || null, timestamp: new Date().toISOString(), read: false, reactions: {}, deleted: false };
     messages.push(newMsg);
     await store.writeMessages(messages);
     return res.json({ message: 'Сообщение отправлено', msg: newMsg });
@@ -460,7 +448,7 @@ app.post('/api/groups/create', requireAuth, asyncHandler(async (req, res) => {
   const { title, type, slug, members } = req.body;
   if (!title?.trim()) return res.status(400).json({ message: 'Укажите название' });
   const groups = await store.readGroups();
-  const id = `g_${Date.now()}`;
+  const id = 'g_' + Date.now();
   const memberSet = new Set([req.authUsername, ...(Array.isArray(members) ? members : [])].map(m => m.trim().toLowerCase()));
   const g = { id, type: type === 'channel' ? 'channel' : 'group', title: String(title).trim().slice(0, 80), slug: slug?.trim().toLowerCase() || null, owner: req.authUsername, admins: [req.authUsername], members: [...memberSet], createdAt: new Date().toISOString() };
   groups.push(g);
@@ -624,7 +612,7 @@ app.post('/api/stand/:id/repost', requireAuth, asyncHandler(async (req, res) => 
   const orig = stands.find(x => x.id === parseInt(req.params.id));
   if (!orig) return res.status(404).json({ message: 'Не найдено' });
   orig.reposts = (orig.reposts || 0) + 1;
-  const r = { id: Date.now(), author: req.authUsername, video: orig.video, caption: `Repost @${orig.author}: ${orig.caption || ''}`, timestamp: new Date().toISOString(), likes: [], favorites: [], comments: [], shares: 0, reposts: 0, originalAuthor: orig.author, originalStandId: orig.id };
+  const r = { id: Date.now(), author: req.authUsername, video: orig.video, caption: 'Repost @' + orig.author + ': ' + (orig.caption || ''), timestamp: new Date().toISOString(), likes: [], favorites: [], comments: [], shares: 0, reposts: 0, originalAuthor: orig.author, originalStandId: orig.id };
   stands.push(r);
   await store.writeStands(stands);
   res.json({ repost: r });
@@ -657,7 +645,7 @@ app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.
 
 async function start() {
   const info = await store.init();
-  console.log(`=== DIO START === storage: ${info.mode}, URL: ${process.env.DATABASE_URL ? 'yes' : 'no'}`);
+  console.log('=== DIO START === storage:', info.mode, 'URL:', process.env.DATABASE_URL ? 'yes' : 'no');
   const server_http = http.createServer(app);
   const wss = new WebSocket.Server({ server: server_http });
   const wsClients = new Map();
@@ -680,7 +668,7 @@ async function start() {
     const clients = wsClients.get(targetUser);
     if (clients) { const p = JSON.stringify(data); clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(p); }); }
   });
-  server_http.listen(PORT, () => { console.log(`Server started on port ${PORT} with WebSocket`); });
+  server_http.listen(PORT, () => { console.log('Server started on port', PORT, 'with WebSocket'); });
 }
 
 start().catch(err => { console.error('Failed to start:', err); });
