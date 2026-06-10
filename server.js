@@ -769,11 +769,6 @@ app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
     };
     messages.push(newMessage);
     await writeMessages(messages);
-    // Notify via WebSocket
-    const sendToUser = req.app.get('ws_send');
-    if (sendToUser) {
-      sendToUser(recipient.username, { type: 'new_message', message: newMessage });
-    }
     return res.json({ message: 'Сообщение отправлено', msg: newMessage });
   }
 
@@ -1386,8 +1381,43 @@ app.use((req, res, next) => {
   next();
 });
 
-app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
+  const server_http = http.createServer(app);
+  const wss = new WebSocket.Server({ server: server_http });
+  const wsClients = new Map();
+
+  wss.on('connection', (ws) => {
+    let username = null;
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data);
+        if (msg.type === 'auth' && msg.username) {
+          username = msg.username;
+          if (!wsClients.has(username)) wsClients.set(username, new Set());
+          wsClients.get(username).add(ws);
+          ws.send(JSON.stringify({ type: 'auth_ok' }));
+        }
+      } catch (e) {}
+    });
+    ws.on('close', () => {
+      if (username && wsClients.has(username)) {
+        wsClients.get(username).delete(ws);
+        if (wsClients.get(username).size === 0) wsClients.delete(username);
+      }
+    });
+    ws.on('error', () => {});
+  });
+
+  function sendToUser(targetUser, data) {
+    const clients = wsClients.get(targetUser);
+    if (clients) {
+      const payload = JSON.stringify(data);
+      clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(payload); });
+    }
+  }
+  app.set('ws_send', sendToUser);
+
+  server_http.listen(PORT, () => {
+    console.log(`Server started on port ${PORT} with WebSocket`);
   });
 }
 
