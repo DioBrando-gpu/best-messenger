@@ -1,8 +1,10 @@
+const http = require('http');
 const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
 const path = require('path');
 const store = require('./lib/store');
+const WebSocket = require('ws');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -767,6 +769,11 @@ app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
     };
     messages.push(newMessage);
     await writeMessages(messages);
+    // Notify via WebSocket
+    const sendToUser = req.app.get('ws_send');
+    if (sendToUser) {
+      sendToUser(recipient.username, { type: 'new_message', message: newMessage });
+    }
     return res.json({ message: 'Сообщение отправлено', msg: newMessage });
   }
 

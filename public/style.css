@@ -1554,3 +1554,76 @@ select {
   transition: all 0.3s ease; font-size: 0.9rem; margin-top: 8px;
 }
 .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(139,92,246,0.3); }
+
+
+/* ===== MOBILE RESPONSIVENESS ===== */
+@media (max-width: 600px) {
+  .container { padding: 12px 0 80px; width: 100%; }
+  .header { padding: 12px 16px; }
+  .navbar button { padding: 6px 10px; font-size: 0.8rem; }
+  .post-card { border-radius: 16px; margin: 0 8px 8px; }
+  .post-body { padding: 12px; }
+  .post-actions { flex-wrap: wrap; gap: 4px; }
+  .post-actions button { padding: 6px 10px; font-size: 0.8rem; }
+  .new-post-card { margin: 0 8px 16px; border-radius: 16px; }
+  .chat-messages { padding: 8px 4px; gap: 3px; }
+  .message { max-width: 85%; font-size: 0.85rem; padding: 6px 10px; }
+  .stand-feed { height: calc(100vh - 120px); border-radius: 0; margin: 0; }
+  .stand-slide { height: calc(100vh - 120px); }
+  .stand-side-actions { bottom: 80px; right: 8px; }
+  .stand-action { min-width: 40px; padding: 8px; font-size: 0.7rem; }
+  .stand-info { max-width: 80%; }
+  .settings-group { margin: 0 8px 12px; padding: 16px; }
+  .bottom-nav { display: flex !important; }
+  .post-author-row { gap: 8px; }
+  .post-author-nickname { font-size: 0.9rem; }
+  .post-author-username { font-size: 0.75rem; }
+  .profile-card { padding: 16px; margin: 0 8px; border-radius: 16px; }
+  .contact-item { padding: 10px; margin: 0 8px; }
+  .message.has-video { width: 160px; height: 160px; min-width: 160px; max-width: 160px; }
+  .message.has-video.has-reactions { min-height: 160px; }
+  .chat-header { padding: 10px 12px; }
+}
+
+/* Bottom navigation - mobile only */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: rgba(15,23,42,0.95);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(139,92,246,0.15);
+  padding: 8px 0;
+  justify-content: space-around;
+  align-items: center;
+}
+.bnav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.7rem;
+  transition: all 0.2s;
+}
+.bnav-btn .bnav-icon { font-size: 1.3rem; }
+.bnav-btn.active { color: #8b5cf6; background: rgba(139,92,246,0.1); }
+
+@media (min-width: 601px) {
+  .bottom-nav { display: none !important; }
+}
+@media (max-width: 600px) {
+  .bottom-nav { display: flex !important; }
+}
+
+/* Navbar hide on mobile */
+@media (max-width: 600px) {
+  .navbar { display: none; }
+  .page-section { padding: 0 8px; }
+}

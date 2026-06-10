@@ -152,6 +152,9 @@ async function loadUser() {
     applyLanguage(appSettings?.language || window.appLang);
     initEmojiPickers();
     window.currentUser = currentUser;
+    // WebSocket connection
+    initWebSocket();
+
     // Heartbeat — обновлять lastSeen каждые 2 минуты
     setInterval(() => {
       request('/api/user/heartbeat', { method: 'POST' }).catch(() => {});
