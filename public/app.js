@@ -120,7 +120,10 @@ function setStatus(text) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...options });
+  const headers = { 'Content-Type': 'application/json' };
+  const token = localStorage.getItem('dio_token');
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const response = await fetch(path, { credentials: 'omit', headers, ...options });
   const json = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(json?.message || 'Ошибка сети');

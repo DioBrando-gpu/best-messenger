@@ -8,7 +8,7 @@ const WebSocket = require('ws');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const COOKIE_SECRET = process.env.COOKIE_SECRET || 'dio-messenger-secret-2026';
+const TOKEN_SECRET = process.env.COOKIE_SECRET || 'dio-token-secret-2026';
 app.set('trust proxy', 1);
 const USERNAME_REGEX = /^[a-z0-9_]{5,32}$/;
 
@@ -28,37 +28,48 @@ function asyncHandler(fn) {
   };
 }
 
-// ============== SIMPLE HMAC COOKIE ==============
-function signCookie(value) {
-  const h = crypto.createHmac('sha256', COOKIE_SECRET).update(value).digest('hex').slice(0, 16);
-  return value + '.' + h;
+// ============== TOKEN AUTH (Authorization header) ==============
+function createToken(username) {
+  const payload = username + '|' + Date.now();
+  const sig = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex').slice(0, 16);
+  return Buffer.from(payload + '.' + sig).toString('base64');
 }
-function verifyCookie(signed) {
-  if (!signed) return null;
-  const dot = signed.lastIndexOf('.');
-  if (dot === -1) return null;
-  const val = signed.slice(0, dot);
-  const sig = signed.slice(dot + 1);
-  const exp = crypto.createHmac('sha256', COOKIE_SECRET).update(val).digest('hex').slice(0, 16);
-  return sig === exp ? val : null;
+
+function verifyToken(token) {
+  try {
+    const decoded = Buffer.from(token, 'base64').toString('utf8');
+    const dot = decoded.lastIndexOf('.');
+    if (dot === -1) return null;
+    const payload = decoded.slice(0, dot);
+    const sig = decoded.slice(dot + 1);
+    const username = payload.split('|')[0];
+    const expected = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex').slice(0, 16);
+    if (sig !== expected) return null;
+    return username;
+  } catch (e) {
+    return null;
+  }
 }
-function getCookie(req, name) {
+
+function getAuthUser(req) {
+  const auth = req.headers['authorization'] || '';
+  if (auth.startsWith('Bearer ')) {
+    return verifyToken(auth.slice(7));
+  }
+  // Fallback to cookie for backward compatibility
   const raw = req.headers.cookie || '';
   for (const part of raw.split(';')) {
     const eq = part.indexOf('=');
-    if (eq > -1 && part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+    if (eq > -1 && part.slice(0, eq).trim() === 'dio_auth') return decodeURIComponent(part.slice(eq + 1).trim());
   }
   return null;
 }
-function setCookie(res, name, value) {
-  res.setHeader('Set-Cookie', name + '=' + encodeURIComponent(value) + '; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax');
-}
-function clearCookie(res, name) {
-  res.setHeader('Set-Cookie', name + '=; Path=/; Max-Age=0; HttpOnly');
-}
-function getAuthUser(req) {
-  const raw = getCookie(req, 'dio_auth');
-  return raw ? verifyCookie(raw) : null;
+
+function requireAuth(req, res, next) {
+  const username = getAuthUser(req);
+  if (!username) return res.status(401).json({ message: 'Unauthorized' });
+  req.authUsername = username;
+  next();
 }
 // ================================================
 
@@ -72,8 +83,8 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   const users = await store.readUsers();
   const user = users.find(u => u.username === username.trim().toLowerCase());
   if (!user || user.password !== password) return res.status(401).json({ message: 'Неверный username или пароль' });
-  setCookie(res, 'dio_auth', signCookie(user.username));
-  res.json({ message: 'Вход выполнен', username: user.username });
+  const token = createToken(user.username);
+  res.json({ message: 'Вход выполнен', username: user.username, token });
 }));
 
 app.post('/api/register', asyncHandler(async (req, res) => {
@@ -87,12 +98,11 @@ app.post('/api/register', asyncHandler(async (req, res) => {
   const newUser = { username: u, password, avatar: avatars[Math.floor(Math.random() * avatars.length)], avatarImage: null, bio: 'Новый пользователь DIO', followers: [], following: [], blacklist: [], createdAt: new Date().toISOString(), settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) };
   users.push(newUser);
   await store.writeUsers(users);
-  setCookie(res, 'dio_auth', signCookie(u));
-  res.json({ message: 'Регистрация прошла успешно', username: u });
+  const token = createToken(u);
+  res.json({ message: 'Регистрация прошла успешно', username: u, token });
 }));
 
 app.post('/api/logout', (req, res) => {
-  clearCookie(res, 'dio_auth');
   res.json({ message: 'Вы вышли из системы' });
 });
 
@@ -104,12 +114,24 @@ app.get('/api/user', asyncHandler(async (req, res) => {
   res.json({ loggedIn: true, username, settings: user?.settings || DEFAULT_SETTINGS });
 }));
 
-function requireAuth(req, res, next) {
-  const username = getAuthUser(req);
-  if (!username) return res.status(401).json({ message: 'Unauthorized' });
-  req.authUsername = username;
-  next();
+app.post('/api/user/heartbeat', requireAuth, asyncHandler(async (req, res) => {
+  const user = await store.getUser(req.authUsername);
+  if (user) { user.lastSeen = new Date().toISOString(); await store.saveUser(user); }
+  res.json({ ok: true });
+}));
+
+function formatLastSeen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); const now = new Date();
+  const m = Math.floor((now - d) / 60000);
+  if (m < 1) return 'только что';
+  if (m < 60) return m + ' мин. назад';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + ' ч. назад';
+  return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
+
+function findUser(users, username) { return users.find(u => u.username === username.trim().toLowerCase()); }
 
 app.get('/api/feed', requireAuth, asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1; const limit = parseInt(req.query.limit) || 6;
@@ -215,8 +237,7 @@ app.get('/api/chat/:username', requireAuth, asyncHandler(async (req, res) => {
   const other = req.params.username.trim().toLowerCase();
   const messages = await store.readMessages();
   const chat = messages.filter(m => !m.groupId && ((m.from === req.authUsername && m.to === other) || (m.from === other && m.to === req.authUsername))).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  chat.forEach(m => { if (m.to === req.authUsername && !m.read) m.read = true; });
-  await store.writeMessages(messages);
+  chat.forEach(m => { if (m.to === req.authUsername && !m.read) m.read = true; }); await store.writeMessages(messages);
   res.json({ messages: chat, withUser: other, chatType: 'dm' });
 }));
 
@@ -224,8 +245,7 @@ app.get('/api/chat/dm/:username', requireAuth, asyncHandler(async (req, res) => 
   const other = req.params.username.trim().toLowerCase();
   const messages = await store.readMessages();
   const chat = messages.filter(m => !m.groupId && ((m.from === req.authUsername && m.to === other) || (m.from === other && m.to === req.authUsername))).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  chat.forEach(m => { if (m.to === req.authUsername && !m.read) m.read = true; });
-  await store.writeMessages(messages);
+  chat.forEach(m => { if (m.to === req.authUsername && !m.read) m.read = true; }); await store.writeMessages(messages);
   res.json({ messages: chat, withUser: other, chatType: 'dm' });
 }));
 
@@ -234,29 +254,26 @@ app.get('/api/chat/group/:groupId', requireAuth, asyncHandler(async (req, res) =
   if (!g || !g.members?.includes(req.authUsername)) return res.status(404).json({ message: 'Группа не найдена' });
   const messages = await store.readMessages();
   const chat = messages.filter(m => m.groupId === g.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  chat.forEach(m => { if (m.to === 'group:' + g.id && m.from !== req.authUsername && !m.read) m.read = true; });
-  await store.writeMessages(messages);
+  chat.forEach(m => { if (m.to === 'group:' + g.id && m.from !== req.authUsername && !m.read) m.read = true; }); await store.writeMessages(messages);
   res.json({ messages: chat, group: g, chatType: 'group' });
 }));
 
 app.post('/api/messages/send', requireAuth, asyncHandler(async (req, res) => {
   const { to, groupId, text, media, mediaType, voice } = req.body;
   if (!text?.trim() && !media && !voice) return res.status(400).json({ message: 'Пустое сообщение' });
-  const bodyText = String(text || '').trim();
-  const messages = await store.readMessages();
+  const bodyText = String(text || '').trim(); const messages = await store.readMessages();
   if (groupId) {
     const groups = await store.readGroups(); const group = groups.find(x => x.id === groupId);
     if (!group || !group.members?.includes(req.authUsername)) return res.status(404).json({ message: 'Группа не найдена' });
     const m = { id: Date.now(), from: req.authUsername, to: 'group:' + group.id, groupId: group.id, text: bodyText || null, media: media || null, mediaType: mediaType || null, voice: voice || null, timestamp: new Date().toISOString(), read: false, reactions: {}, deleted: false };
-    messages.push(m); await store.writeMessages(messages);
-    return res.json({ message: 'Сообщение отправлено', msg: m });
+    messages.push(m); await store.writeMessages(messages); return res.json({ message: 'Сообщение отправлено', msg: m });
   }
   if (!to) return res.status(400).json({ message: 'Укажите получателя' });
   const users = await store.readUsers(); const recipient = users.find(x => x.username === to.trim().toLowerCase());
   if (!recipient) return res.status(404).json({ message: 'Пользователь не найден' });
   if (recipient.blacklist?.includes(req.authUsername)) return res.status(403).json({ message: 'Вы в чёрном списке у этого пользователя' });
-  const canMsg = recipient.settings?.privacy?.allowMessages || 'everyone';
-  if (canMsg === 'nobody' || (canMsg === 'followers' && !recipient.followers?.includes(req.authUsername))) return res.status(403).json({ message: 'Этот пользователь не принимает сообщения' });
+  const rule = recipient.settings?.privacy?.allowMessages || 'everyone';
+  if (rule === 'nobody' || (rule === 'followers' && !recipient.followers?.includes(req.authUsername))) return res.status(403).json({ message: 'Этот пользователь не принимает сообщения' });
   const m = { id: Date.now(), from: req.authUsername, to: recipient.username, groupId: null, text: bodyText || null, media: media || null, mediaType: mediaType || null, voice: voice || null, timestamp: new Date().toISOString(), read: false, reactions: {}, deleted: false };
   messages.push(m); await store.writeMessages(messages);
   res.json({ message: 'Сообщение отправлено', msg: m });
@@ -266,10 +283,8 @@ app.post('/api/messages/:id/react', requireAuth, asyncHandler(async (req, res) =
   const { emoji } = req.body; if (!emoji) return res.status(400).json({ message: 'Укажите emoji' });
   const messages = await store.readMessages(); const msg = messages.find(m => m.id === parseInt(req.params.id));
   if (!msg) return res.status(404).json({ message: 'Сообщение не найдено' });
-  if (msg.groupId) {
-    const groups = await store.readGroups(); const g = groups.find(x => x.id === msg.groupId);
-    if (!g || !g.members?.includes(req.authUsername)) return res.status(403).json({ message: 'Вы не участник этого чата' });
-  } else if (msg.from !== req.authUsername && msg.to !== req.authUsername) return res.status(403).json({ message: 'Это не ваше сообщение' });
+  if (msg.groupId) { const groups = await store.readGroups(); const g = groups.find(x => x.id === msg.groupId); if (!g || !g.members?.includes(req.authUsername)) return res.status(403).json({ message: 'Вы не участник этого чата' }); }
+  else if (msg.from !== req.authUsername && msg.to !== req.authUsername) return res.status(403).json({ message: 'Это не ваше сообщение' });
   msg.reactions = msg.reactions || {}; const reactors = msg.reactions[emoji] || []; const i = reactors.indexOf(req.authUsername);
   if (i > -1) { reactors.splice(i, 1); if (reactors.length === 0) delete msg.reactions[emoji]; } else { reactors.push(req.authUsername); msg.reactions[emoji] = reactors; }
   await store.writeMessages(messages); res.json({ reactions: msg.reactions });
@@ -298,10 +313,9 @@ app.get('/api/groups', requireAuth, asyncHandler(async (req, res) => {
 app.post('/api/groups/create', requireAuth, asyncHandler(async (req, res) => {
   if (!req.body.title?.trim()) return res.status(400).json({ message: 'Укажите название' });
   const groups = await store.readGroups();
-  const memberSet = new Set([req.authUsername, ...(Array.isArray(req.body.members) ? req.body.members : [])].map(m => m.trim().toLowerCase()));
-  const g = { id: 'g_' + Date.now(), type: req.body.type === 'channel' ? 'channel' : 'group', title: String(req.body.title).trim().slice(0, 80), slug: (req.body.slug || '').trim().toLowerCase() || null, owner: req.authUsername, admins: [req.authUsername], members: [...memberSet], createdAt: new Date().toISOString() };
-  groups.push(g); await store.writeGroups(groups);
-  res.json({ message: 'Создано', group: g });
+  const ms = new Set([req.authUsername, ...(Array.isArray(req.body.members) ? req.body.members : [])].map(m => m.trim().toLowerCase()));
+  const g = { id: 'g_' + Date.now(), type: req.body.type === 'channel' ? 'channel' : 'group', title: String(req.body.title).trim().slice(0, 80), slug: (req.body.slug || '').trim().toLowerCase() || null, owner: req.authUsername, admins: [req.authUsername], members: [...ms], createdAt: new Date().toISOString() };
+  groups.push(g); await store.writeGroups(groups); res.json({ message: 'Создано', group: g });
 }));
 
 app.post('/api/groups/:id/join', requireAuth, asyncHandler(async (req, res) => {
@@ -453,17 +467,14 @@ app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.
 
 async function start() {
   const info = await store.init();
-  console.log('=== DIO START === storage:', info.mode, 'URL:', process.env.DATABASE_URL ? 'yes' : 'no');
+  console.log('=== DIO START === storage:', info.mode);
   const server_http = http.createServer(app);
   const wss = new WebSocket.Server({ server: server_http });
   const wsClients = new Map();
   wss.on('connection', (ws) => {
     let username = null;
     ws.on('message', (data) => {
-      try {
-        const msg = JSON.parse(data);
-        if (msg.type === 'auth' && msg.username) { username = msg.username; if (!wsClients.has(username)) wsClients.set(username, new Set()); wsClients.get(username).add(ws); ws.send(JSON.stringify({ type: 'auth_ok' })); }
-      } catch (e) {}
+      try { const msg = JSON.parse(data); if (msg.type === 'auth' && msg.username) { username = msg.username; if (!wsClients.has(username)) wsClients.set(username, new Set()); wsClients.get(username).add(ws); ws.send(JSON.stringify({ type: 'auth_ok' })); } } catch (e) {}
     });
     ws.on('close', () => { if (username && wsClients.has(username)) { wsClients.get(username).delete(ws); if (wsClients.get(username).size === 0) wsClients.delete(username); } });
   });

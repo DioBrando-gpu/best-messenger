@@ -59,7 +59,6 @@
     async function request(path, body) {
       const response = await fetch(path, {
         method: 'POST',
-        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
@@ -79,6 +78,11 @@
         }
         const body = { username, password };
         const result = await request(path, body);
+        // Save token to localStorage
+        if (result.token) {
+          localStorage.setItem('dio_token', result.token);
+          localStorage.setItem('dio_username', result.username);
+        }
         showMessage(result.message, false);
         setTimeout(() => window.location.href = '/', 600);
       } catch (error) {
