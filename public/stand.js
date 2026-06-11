@@ -73,6 +73,27 @@ function renderStandSlide(stand) {
   slide.querySelector('.repost-btn')?.addEventListener('click', () => standRepost(stand.id));
   slide.querySelector('.delete-stand-btn')?.addEventListener('click', () => standDelete(stand.id, slide));
 
+  // Клик по аватару — открыть страницу автора
+  slide.querySelector('.stand-avatar-img, .stand-avatar-placeholder')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const author = e.currentTarget.dataset.author;
+    if (author && window.openAuthorPage) window.openAuthorPage(author);
+  });
+
+  // Кнопка подписки
+  slide.querySelector('.stand-follow-btn')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const author = e.currentTarget.dataset.author;
+    if (!author) return;
+    try {
+      await request(`/api/users/${encodeURIComponent(author)}/follow`, { method: 'POST' });
+      e.currentTarget.textContent = '✓';
+      e.currentTarget.style.background = '#22c55e';
+    } catch (err) {
+      setStatus(err.message);
+    }
+  });
+
   // Автоплей при попадании в зону видимости - улучшенная версия
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {

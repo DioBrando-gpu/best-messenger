@@ -2091,6 +2091,62 @@ window.request = request;
 window.setStatus = setStatus;
 window.readFileAsDataURL = readFileAsDataURL;
 window.attachEmojiPicker = attachEmojiPicker;
+window.openAuthorPage = openAuthorPage;
+
+// ========== AUTHOR PUBLIC PAGE ==========
+async function openAuthorPage(username) {
+  try {
+    const data = await request(`/api/users/${encodeURIComponent(username)}/public`);
+    const avatarHtml = data.avatarImage
+      ? `<img src="${data.avatarImage}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid #8b5cf6;">`
+      : `<div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:2rem;border:3px solid #8b5cf6;">${data.avatar || '👤'}</div>`;
+
+    const postsHtml = data.posts.length ? data.posts.map(p => {
+      const av = p.avatarImage ? `<img src="${p.avatarImage}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">` : `<span>${p.avatar || '👤'}</span>`;
+      return `<div class="post-card" style="margin-bottom:12px;">
+        <div class="post-body">
+          <div class="post-meta"><div class="post-author-row">${av}<div class="post-author-info"><span class="post-author-username">@${p.author}</span></div></div><small>${new Date(p.timestamp).toLocaleString('ru-RU')}</small></div>
+          <p>${escapeHtml(p.text)}</p>
+          ${p.image ? `<img src="${p.image}" style="width:100%;border-radius:12px;margin:8px 0;">` : ''}
+          <div class="post-actions"><span>❤ ${p.likes?.length || 0}</span> <span>⭐ ${p.favorites?.length || 0}</span> <span>💬 ${p.comments?.length || 0}</span></div>
+        </div>
+      </div>`;
+    }).join('') : '<p style="color:var(--text-muted);padding:20px;">Нет постов</p>';
+
+    const standsHtml = data.stands.length ? data.stands.map(s => `
+      <div style="display:inline-block;margin:6px;">
+        <video src="${s.video}" style="width:160px;height:200px;object-fit:cover;border-radius:12px;" muted playsinline preload="metadata"></video>
+        <p style="font-size:.75rem;color:var(--text-muted);margin-top:4px;">❤ ${s.likes?.length || 0}</p>
+      </div>
+    `).join('') : '<p style="color:var(--text-muted);padding:20px;">Нет Stand</p>';
+
+    const modal = document.querySelector('#user-profile-content');
+    if (!modal) return;
+    modal.innerHTML = `
+      <div style="text-align:center;padding:24px;">
+        ${avatarHtml}
+        <h2 style="margin:12px 0 4px;">@${data.username}</h2>
+        <p style="color:var(--text-muted);margin:0 0 16px;">${escapeHtml(data.bio)}</p>
+        <div style="display:flex;justify-content:center;gap:24px;margin-bottom:16px;">
+          <div><strong>${data.postsCount}</strong> постов</div>
+          <div><strong>${data.standsCount}</strong> stand</div>
+          <div><strong>${data.followers}</strong> подписчиков</div>
+        </div>
+        ${data.username !== currentUser ? `
+          <div style="display:flex;gap:8px;justify-content:center;margin-bottom:20px;">
+            <button class="btn-primary" onclick="followUser('${data.username}', this).then(() => openAuthorPage('${data.username}'))">${data.isFollowing ? 'Подписано' : 'Подписаться'}</button>
+            <button class="btn-primary" onclick="startDmChat('${data.username}')">Написать</button>
+          </div>
+        ` : ''}
+      </div>
+      ${data.stands.length ? `<div style="padding:0 16px;"><h3 style="margin:0 0 8px;">🎬 Stand</h3><div style="overflow-x:auto;white-space:nowrap;padding-bottom:8px;">${standsHtml}</div></div>` : ''}
+      <div style="padding:16px;"><h3 style="margin:0 0 8px;">📝 Посты</h3>${postsHtml}</div>
+    `;
+    document.querySelector('#user-profile-modal')?.classList.remove('hidden');
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
 
 // WebSocket
 function initWebSocket() {

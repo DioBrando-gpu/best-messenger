@@ -412,7 +412,34 @@ app.get('/api/users/:username/profile', requireAuth, asyncHandler(async (req, re
   if (!user) return res.status(404).json({ message: 'Пользователь не найден' });
   const visible = user.settings?.privacy?.profileVisible !== false || req.authUsername === user.username;
   const postsCount = visible ? await store.countPostsByAuthor(user.username) : null;
-  res.json({ username: user.username, avatar: user.avatar, avatarImage: user.avatarImage || null, bio: visible ? user.bio : 'Профиль скрыт', followers: visible ? user.followers?.length || 0 : null, following: visible ? user.following?.length || 0 : null, posts: postsCount, profileVisible: visible, isFollowing: user.followers?.includes(req.authUsername) || false });
+  const rule = user.settings?.privacy?.allowMessages || 'everyone';
+  const canMsg = rule === 'nobody' ? false : (rule === 'followers' ? (user.followers?.includes(req.authUsername) || false) : true);
+  res.json({ username: user.username, avatar: user.avatar, avatarImage: user.avatarImage || null, bio: visible ? user.bio : 'Профиль скрыт', followers: visible ? user.followers?.length || 0 : null, following: visible ? user.following?.length || 0 : null, posts: postsCount, profileVisible: visible, isFollowing: user.followers?.includes(req.authUsername) || false, canMessage: canMsg, lastSeen: user.lastSeen || null });
+}));
+
+// Author public page — posts + stands by username
+app.get('/api/users/:username/public', requireAuth, asyncHandler(async (req, res) => {
+  const uname = req.params.username?.trim().toLowerCase();
+  const user = await store.getUser(uname);
+  if (!user) return res.status(404).json({ message: 'Пользователь не найден' });
+  const posts = (await store.readPosts()).filter(p => p.author === uname).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const stands = (await store.readStands()).filter(s => s.author === uname).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const users = await store.readUsers();
+  const enrichedPosts = posts.map(p => { const u = users.find(x => x.username === p.author); return { ...p, avatar: u?.avatar || '👤', avatarImage: u?.avatarImage || null }; });
+  const enrichedStands = stands.map(s => { const u = users.find(x => x.username === s.author); return { ...s, avatar: u?.avatar || '👤', avatarImage: u?.avatarImage || null }; });
+  res.json({
+    username: user.username,
+    avatar: user.avatar,
+    avatarImage: user.avatarImage || null,
+    bio: user.bio || '',
+    followers: user.followers?.length || 0,
+    following: user.following?.length || 0,
+    postsCount: enrichedPosts.length,
+    standsCount: enrichedStands.length,
+    isFollowing: user.followers?.includes(req.authUsername) || false,
+    posts: enrichedPosts,
+    stands: enrichedStands
+  });
 }));
 
 app.get('/api/stand/feed', requireAuth, asyncHandler(async (req, res) => {
