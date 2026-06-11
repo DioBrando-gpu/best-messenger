@@ -2091,3 +2091,24 @@ window.request = request;
 window.setStatus = setStatus;
 window.readFileAsDataURL = readFileAsDataURL;
 window.attachEmojiPicker = attachEmojiPicker;
+
+// WebSocket
+function initWebSocket() {
+  try {
+    const wsUrl = location.protocol === 'https:' ? 'wss://' + location.host : 'ws://' + location.host;
+    const ws = new WebSocket(wsUrl);
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'new_message') {
+          playMessageSound();
+          if (currentChat && (msg.from === currentChat || msg.to === currentChat)) {
+            if (currentChatType === 'group') openGroupChat(currentGroupId);
+            else openDmChat(currentChat);
+          }
+        }
+      } catch (err) {}
+    };
+    ws.onclose = () => { setTimeout(() => initWebSocket(), 5000); };
+  } catch (e) {}
+}
