@@ -77,6 +77,15 @@ function requireAuth(req, res, next) {
 }
 // ================================================
 
+// Prevent caching of HTML/JS files
+app.use((req, res, next) => {
+  if (req.url.endsWith('.html') || req.url.endsWith('.js') || req.url.endsWith('.css')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.json({ limit: '500mb' }));
 app.use(bodyParser.urlencoded({ limit: '500mb', extended: true }));
