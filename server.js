@@ -400,7 +400,11 @@ app.get('/api/users/lookup/:username', requireAuth, asyncHandler(async (req, res
 app.get('/api/users/search', requireAuth, asyncHandler(async (req, res) => {
   const q = (req.query.q || '').trim().toLowerCase(); const all = await store.readUsers();
   const filtered = all.filter(u => u.username !== req.authUsername && (!q || u.username.includes(q))).sort((a, b) => a.username.localeCompare(b.username)).slice(0, 30);
-  res.json({ users: filtered.map(u => ({ username: u.username, avatar: u.avatar, avatarImage: u.avatarImage || null, bio: (u.settings?.privacy?.profileVisible !== false || req.authUsername === u.username) ? u.bio : 'Профиль скрыт', isFollowing: u.followers?.includes(req.authUsername) || false })) });
+  res.json({ users: filtered.map(u => {
+    const rule = u.settings?.privacy?.allowMessages || 'everyone';
+    const canMsg = rule === 'nobody' ? false : (rule === 'followers' ? (u.followers?.includes(req.authUsername) || false) : true);
+    return { username: u.username, avatar: u.avatar, avatarImage: u.avatarImage || null, bio: (u.settings?.privacy?.profileVisible !== false || req.authUsername === u.username) ? u.bio : 'Профиль скрыт', isFollowing: u.followers?.includes(req.authUsername) || false, canMessage: canMsg };
+  }) });
 }));
 
 app.get('/api/users/:username/profile', requireAuth, asyncHandler(async (req, res) => {
@@ -414,7 +418,7 @@ app.get('/api/users/:username/profile', requireAuth, asyncHandler(async (req, re
 app.get('/api/stand/feed', requireAuth, asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1; const limit = parseInt(req.query.limit) || 5;
   let stands = await store.readStands();
-  for (const s of stands) { const u = await store.getUser(s.author); if (u) { s.avatar = u.avatar || '👤'; s.isLiked = s.likes?.includes(req.authUsername); s.isFavorite = s.favorites?.includes(req.authUsername); s.isFollowing = u.followers?.includes(req.authUsername); } }
+  for (const s of stands) { const u = await store.getUser(s.author); if (u) { s.avatar = u.avatar || '👤'; s.avatarImage = u.avatarImage || null; s.isLiked = s.likes?.includes(req.authUsername); s.isFavorite = s.favorites?.includes(req.authUsername); s.isFollowing = u.followers?.includes(req.authUsername); } }
   stands.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   res.json({ stands: stands.slice((page - 1) * limit, page * limit), hasMore: page * limit < stands.length });
 }));
