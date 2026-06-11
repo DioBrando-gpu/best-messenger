@@ -54,7 +54,10 @@ function verifyToken(token) {
 function getAuthUser(req) {
   const auth = req.headers['authorization'] || '';
   if (auth.startsWith('Bearer ')) {
-    return verifyToken(auth.slice(7));
+    const token = auth.slice(7);
+    const user = verifyToken(token);
+    console.log('[AUTH] Bearer token:', token.slice(0, 20) + '...', '-> user:', user);
+    return user;
   }
   // Fallback to cookie for backward compatibility
   const raw = req.headers.cookie || '';
@@ -62,6 +65,7 @@ function getAuthUser(req) {
     const eq = part.indexOf('=');
     if (eq > -1 && part.slice(0, eq).trim() === 'dio_auth') return decodeURIComponent(part.slice(eq + 1).trim());
   }
+  console.log('[AUTH] No auth found. Headers:', JSON.stringify(req.headers));
   return null;
 }
 
